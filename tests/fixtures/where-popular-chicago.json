@@ -1,0 +1,129 @@
+{
+ "_note": "Recorded from the Qloo hackathon API on 2026-10-06 via qloo exec (harness 0.1.26); execution ids removed, no credentials.",
+ "args": [
+  "exec",
+  "where_popular"
+ ],
+ "input": {
+  "entity": "AFBC71A7-9439-4AB0-AB68-D14B11AAF836",
+  "within": "Chicago",
+  "limit": 15
+ },
+ "output": {
+  "schema_version": "1.0-preview.1",
+  "operation": "where_popular",
+  "status": "ok",
+  "interpretation": {
+   "entity": {
+    "input": "AFBC71A7-9439-4AB0-AB68-D14B11AAF836",
+    "entityId": "AFBC71A7-9439-4AB0-AB68-D14B11AAF836",
+    "name": "Phoebe Bridgers",
+    "type": "urn:entity:artist",
+    "match": "identifier"
+   },
+   "within": "Chicago"
+  },
+  "results": [
+   {
+    "location": {
+     "latitude": 41.88469,
+     "longitude": -87.66472,
+     "geohash": "dp3wm0u"
+    },
+    "query": {
+     "affinity": 1,
+     "affinity_rank": 0.998722,
+     "popularity": 0.9928372463191405,
+     "entity_artist_affinity_rank": 0.998722,
+     "entity_artist_affinity": 1
+    }
+   },
+   {
+    "location": {
+     "latitude": 41.857224,
+     "longitude": -87.65785,
+     "geohash": "dp3wj7c"
+    },
+    "query": {
+     "affinity": 0.9996020692399522,
+     "affinity_rank": 0.998602,
+     "popularity": 0.9976124154397135,
+     "entity_artist_affinity_rank": 0.998602,
+     "entity_artist_affinity": 0.9996020692399522
+    }
+   },
+   {
+    "location": {
+     "latitude": 41.925888,
+     "longitude": -87.64961,
+     "geohash": "dp3wt2r"
+    },
+    "query": {
+     "affinity": 0.9992041384799045,
+     "affinity_rank": 0.9986,
+     "popularity": 0.993633107839236,
+     "entity_artist_affinity_rank": 0.9986,
+     "entity_artist_affinity": 0.9992041384799045
+    }
+   },
+   {
+    "location": {
+     "latitude": 41.949234,
+     "longitude": -87.659225,
+     "geohash": "dp3wtk8"
+    },
+    "query": {
+     "affinity": 0.9988062077198567,
+     "affinity_rank": 0.998247,
+     "popularity": 0.9964186231595702,
+     "entity_artist_affinity_rank": 0.998247,
+     "entity_artist_affinity": 0.9988062077198567
+    }
+   },
+   {
+    "location": {
+     "latitude": 41.96846,
+     "longitude": -87.6606,
+     "geohash": "dp3wv0p"
+    },
+    "query": {
+     "affinity": 0.9984082769598089,
+     "affinity_rank": 0.997961,
+     "popularity": 0.9932351770791882,
+     "entity_artist_affinity_rank": 0.997961,
+     "entity_artist_affinity": 0.9984082769598089
+    }
+   },
+   {
+    "location": {
+     "latitude": 41.942368,
+     "longitude": -87.67021,
+     "geohash": "dp3wt52"
+    },
+    "query": {
+     "affinity": 0.9980103461997613,
+     "affinity_rank": 0.997913,
+     "popularity": 0.9725427775567052,
+     "entity_artist_affinity_rank": 0.997913,
+     "entity_artist_affinity": 0.9980103461997613
+    }
+   }
+  ],
+  "result_count": 15,
+  "provenance": {
+   "endpoint": "/v2/insights",
+   "requests": [
+    {
+     "method": "GET",
+     "path": "/v2/insights",
+     "query": {
+      "filter.type": "urn:heatmap",
+      "signal.interests.entities": "AFBC71A7-9439-4AB0-AB68-D14B11AAF836",
+      "filter.location.query": "Chicago",
+      "take": 15
+     }
+    }
+   ]
+  }
+ }
+}

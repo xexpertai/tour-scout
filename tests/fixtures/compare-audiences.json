@@ -1,0 +1,848 @@
+{
+ "_note": "Recorded from the Qloo hackathon API on 2026-10-06 via qloo exec (harness 0.1.26); execution ids removed, no credentials.",
+ "args": [
+  "exec",
+  "compare_audiences"
+ ],
+ "input": {
+  "group_a": [
+   "AFBC71A7-9439-4AB0-AB68-D14B11AAF836"
+  ],
+  "group_b": [
+   "4BBEF799-A0C4-4110-AB01-39216993C312"
+  ],
+  "limit": 6
+ },
+ "output": {
+  "schema_version": "1.0-preview.1",
+  "operation": "compare_audiences",
+  "status": "ok",
+  "interpretation": {
+   "group_a": [
+    {
+     "input": "AFBC71A7-9439-4AB0-AB68-D14B11AAF836",
+     "entityId": "AFBC71A7-9439-4AB0-AB68-D14B11AAF836",
+     "name": "Phoebe Bridgers",
+     "type": "urn:entity:artist",
+     "match": "identifier"
+    }
+   ],
+   "group_b": [
+    {
+     "input": "4BBEF799-A0C4-4110-AB01-39216993C312",
+     "entityId": "4BBEF799-A0C4-4110-AB01-39216993C312",
+     "name": "Taylor Swift",
+     "type": "urn:entity:artist",
+     "match": "identifier"
+    }
+   ]
+  },
+  "results": {
+   "tags": [
+    {
+     "tag_id": "urn:tag:characteristic:music:melodic",
+     "name": "Melodic",
+     "type": "urn:tag",
+     "subtype": "urn:tag:characteristic:music",
+     "entity_id": "C346D0F8-37BD-496F-93F6-375C4E5DBEAA",
+     "popularity": 0,
+     "query": {
+      "score": 0.9936633132062567,
+      "a.signal.interests.entities": [
+       "[detail omitted]"
+      ],
+      "b.signal.interests.entities": [
+       "[detail omitted]"
+      ]
+     }
+    },
+    {
+     "tag_id": "urn:tag:genre:music:folk",
+     "name": "Folk",
+     "type": "urn:tag",
+     "subtype": "urn:tag:genre:music",
+     "entity_id": "D48DE672-3A1F-4FAE-87E6-9CC030619CE4",
+     "popularity": 0.9994502387866685,
+     "query": {
+      "score": 0.9936633132062567,
+      "a.signal.interests.entities": [
+       "[detail omitted]"
+      ],
+      "b.signal.interests.entities": [
+       "[detail omitted]"
+      ]
+     }
+    },
+    {
+     "tag_id": "urn:tag:region:qloo:united_states",
+     "name": "United States",
+     "type": "urn:tag",
+     "subtype": "urn:tag:region:qloo",
+     "entity_id": "9231423C-49CD-4240-8227-78D285399E78",
+     "popularity": 0,
+     "query": {
+      "score": 0.9819094175366204,
+      "a.signal.interests.entities": [
+       "[detail omitted]"
+      ],
+      "b.signal.interests.entities": [
+       "[detail omitted]"
+      ]
+     }
+    },
+    {
+     "tag_id": "urn:tag:characteristic:music:straightforward",
+     "name": "Straightforward",
+     "type": "urn:tag",
+     "subtype": "urn:tag:characteristic:music",
+     "entity_id": "2CACC518-2A99-4F25-9808-368E22560662",
+     "popularity": 0,
+     "query": {
+      "score": 0.9043642498606808,
+      "a.signal.interests.entities": [
+       "[detail omitted]"
+      ],
+      "b.signal.interests.entities": [
+       "[detail omitted]"
+      ]
+     }
+    },
+    {
+     "tag_id": "urn:tag:characteristic:music:moderate",
+     "name": "Moderate",
+     "type": "urn:tag",
+     "subtype": "urn:tag:characteristic:music",
+     "entity_id": "BEB98568-B4F7-4B0D-910E-742686DA4977",
+     "popularity": 0,
+     "query": {
+      "score": 0.8549790754166487,
+      "a.signal.interests.entities": [
+       "[detail omitted]"
+      ],
+      "b.signal.interests.entities": [
+       "[detail omitted]"
+      ]
+     }
+    },
+    {
+     "tag_id": "urn:tag:characteristic:music:harmonic",
+     "name": "Harmonic",
+     "type": "urn:tag",
+     "subtype": "urn:tag:characteristic:music",
+     "entity_id": "D21FDCF3-4B71-4CEA-9848-AA72F9B94117",
+     "popularity": 0,
+     "query": {
+      "score": 0.8549790754166487,
+      "a.signal.interests.entities": [
+       "[detail omitted]"
+      ],
+      "b.signal.interests.entities": [
+       "[detail omitted]"
+      ]
+     }
+    },
+    {
+     "tag_id": "urn:tag:characteristic:music:emotional",
+     "name": "Emotional",
+     "type": "urn:tag",
+     "subtype": "urn:tag:characteristic:music",
+     "entity_id": "403B2D4B-18F1-483F-B57B-C63573480EBA",
+     "popularity": 0,
+     "query": {
+      "score": 0.8174335391446893,
+      "a.signal.interests.entities": [
+       "[detail omitted]"
+      ],
+      "b.signal.interests.entities": [
+       "[detail omitted]"
+      ]
+     }
+    },
+    {
+     "tag_id": "urn:tag:instrument:music:acoustic_guitar",
+     "name": "Acoustic Guitar",
+     "type": "urn:tag",
+     "subtype": "urn:tag:instrument:music",
+     "entity_id": "42574296-83A8-497E-8AED-5D1D7A217456",
+     "popularity": 0,
+     "query": {
+      "score": 0.8171236770021905,
+      "a.signal.interests.entities": [
+       "[detail omitted]"
+      ],
+      "b.signal.interests.entities": [
+       "[detail omitted]"
+      ]
+     }
+    },
+    {
+     "tag_id": "urn:tag:instrument:music:piano",
+     "name": "Piano",
+     "type": "urn:tag",
+     "subtype": "urn:tag:instrument:music",
+     "entity_id": "57F0BC79-0F07-41F2-B699-E1FA919F4EF1",
+     "popularity": 0,
+     "query": {
+      "score": 0.8171236770021905,
+      "a.signal.interests.entities": [
+       "[detail omitted]"
+      ],
+      "b.signal.interests.entities": [
+       "[detail omitted]"
+      ]
+     }
+    },
+    {
+     "tag_id": "urn:tag:characteristic:music:4_4_time",
+     "name": "4/4 Time",
+     "type": "urn:tag",
+     "subtype": "urn:tag:characteristic:music",
+     "entity_id": "D98D9BD7-6557-4111-BC63-F930D7766FF0",
+     "popularity": 0,
+     "query": {
+      "score": 0.7309347378236065,
+      "a.signal.interests.entities": [
+       "[detail omitted]"
+      ],
+      "b.signal.interests.entities": [
+       "[detail omitted]"
+      ]
+     }
+    },
+    {
+     "tag_id": "urn:tag:genre:music:singer_songwriter",
+     "name": "Singer & Songwriter",
+     "type": "urn:tag",
+     "subtype": "urn:tag:genre:music",
+     "entity_id": "2ABA0931-5B34-4074-8285-28034D517B0E",
+     "popularity": 0.9991337031957619,
+     "query": {
+      "score": 0.7308882208212064,
+      "a.signal.interests.entities": [
+       "[detail omitted]"
+      ],
+      "b.signal.interests.entities": [
+       "[detail omitted]"
+      ]
+     }
+    },
+    {
+     "tag_id": "urn:tag:characteristic:music:simple_chord_progressions",
+     "name": "Simple Chord Progressions",
+     "type": "urn:tag",
+     "subtype": "urn:tag:characteristic:music",
+     "entity_id": "8505174C-BA0C-409E-92D5-681EC1DFF136",
+     "popularity": 0,
+     "query": {
+      "score": 0.7307091392292362,
+      "a.signal.interests.entities": [
+       "[detail omitted]"
+      ],
+      "b.signal.interests.entities": [
+       "[detail omitted]"
+      ]
+     }
+    },
+    {
+     "tag_id": "urn:tag:characteristic:music:storytelling",
+     "name": "Storytelling",
+     "type": "urn:tag",
+     "subtype": "urn:tag:characteristic:music",
+     "entity_id": "B198F09C-7C8C-4413-81DA-DC2D217B8320",
+     "popularity": 0,
+     "query": {
+      "score": 0.7307091392292362,
+      "a.signal.interests.entities": [
+       "[detail omitted]"
+      ],
+      "b.signal.interests.entities": [
+       "[detail omitted]"
+      ]
+     }
+    },
+    {
+     "tag_id": "urn:tag:characteristic:music:introspective",
+     "name": "Introspective",
+     "type": "urn:tag",
+     "subtype": "urn:tag:characteristic:music",
+     "entity_id": "68B9E339-4EE2-49BC-AEA4-B22B4F88E767",
+     "popularity": 0,
+     "query": {
+      "score": 0.730662597596226,
+      "a.signal.interests.entities": [
+       "[detail omitted]"
+      ],
+      "b.signal.interests.entities": [
+       "[detail omitted]"
+      ]
+     }
+    },
+    {
+     "tag_id": "urn:tag:characteristic:music:expressive",
+     "name": "Expressive",
+     "type": "urn:tag",
+     "subtype": "urn:tag:characteristic:music",
+     "entity_id": "C596FCF2-CA55-4AF9-995E-C39C61F8F2CA",
+     "popularity": 0,
+     "query": {
+      "score": 0.730662597596226,
+      "a.signal.interests.entities": [
+       "[detail omitted]"
+      ],
+      "b.signal.interests.entities": [
+       "[detail omitted]"
+      ]
+     }
+    },
+    {
+     "tag_id": "urn:tag:audience:qloo:passionate",
+     "name": "Passionate",
+     "type": "urn:tag",
+     "subtype": "urn:tag:audience:qloo",
+     "entity_id": "F5485D5E-6C8E-4CE8-951C-3B13AD76D935",
+     "popularity": 0.9920842192844597,
+     "query": {
+      "score": 0.7294993952774845,
+      "a.signal.interests.entities": [
+       "[detail omitted]"
+      ],
+      "b.signal.interests.entities": [
+       "[detail omitted]"
+      ]
+     }
+    },
+    {
+     "tag_id": "urn:tag:audience:qloo:loyal",
+     "name": "Loyal",
+     "type": "urn:tag",
+     "subtype": "urn:tag:audience:qloo",
+     "entity_id": "EDDB06AD-35FE-431E-A2A5-4F5589471FEE",
+     "popularity": 0.9920264398631783,
+     "query": {
+      "score": 0.7294879979555896,
+      "a.signal.interests.entities": [
+       "[detail omitted]"
+      ],
+      "b.signal.interests.entities": [
+       "[detail omitted]"
+      ]
+     }
+    },
+    {
+     "tag_id": "urn:tag:instrument:qloo:guitar",
+     "name": "Guitar",
+     "type": "urn:tag",
+     "subtype": "urn:tag:instrument:qloo",
+     "entity_id": "48648868-95A5-4F0B-B517-71ECBB9F4EBD",
+     "popularity": 0.9918993251363595,
+     "query": {
+      "score": 0.7294629086685711,
+      "a.signal.interests.entities": [
+       "[detail omitted]"
+      ],
+      "b.signal.interests.entities": [
+       "[detail omitted]"
+      ]
+     }
+    },
+    {
+     "tag_id": "urn:tag:instrument:qloo:piano",
+     "name": "Piano",
+     "type": "urn:tag",
+     "subtype": "urn:tag:instrument:qloo",
+     "entity_id": "80C2C13B-39EB-4DAF-90EB-C43D84162858",
+     "popularity": 0.9774775815845429,
+     "query": {
+      "score": 0.7266074324413454,
+      "a.signal.interests.entities": [
+       "[detail omitted]"
+      ],
+      "b.signal.interests.entities": [
+       "[detail omitted]"
+      ]
+     }
+    },
+    {
+     "tag_id": "urn:tag:theme:qloo:heartbreak",
+     "name": "Heartbreak",
+     "type": "urn:tag",
+     "subtype": "urn:tag:theme:qloo",
+     "entity_id": "1157CA05-F10E-4C89-A1B1-10DBE72F1272",
+     "popularity": 0.9768420079504484,
+     "query": {
+      "score": 0.7264811481520417,
+      "a.signal.interests.entities": [
+       "[detail omitted]"
+      ],
+      "b.signal.interests.entities": [
+       "[detail omitted]"
+      ]
+     }
+    }
+   ],
+   "a": [
+    {
+     "tag_id": "urn:tag:theme:qloo:heartbreak",
+     "name": "Heartbreak",
+     "type": "urn:tag",
+     "subtype": "urn:tag:theme:qloo",
+     "entity_id": "1157CA05-F10E-4C89-A1B1-10DBE72F1272",
+     "popularity": 0.976842,
+     "query": {
+      "count": "1"
+     }
+    },
+    {
+     "tag_id": "urn:tag:style:qloo:expressive",
+     "name": "Expressive",
+     "type": "urn:tag",
+     "subtype": "urn:tag:style:qloo",
+     "entity_id": "241982E6-3CCA-42C2-81EC-A5DC7E99896A",
+     "popularity": 0.9734908,
+     "query": {
+      "count": "1"
+     }
+    },
+    {
+     "tag_id": "urn:tag:theme:qloo:personal_reflection",
+     "name": "Personal Reflection",
+     "type": "urn:tag",
+     "subtype": "urn:tag:theme:qloo",
+     "entity_id": "2A8B25DD-44DE-43B7-9891-DA04D6E2B0B2",
+     "popularity": 0.8599311,
+     "query": {
+      "count": "1"
+     }
+    },
+    {
+     "tag_id": "urn:tag:genre:music:singer_songwriter",
+     "name": "Singer & Songwriter",
+     "type": "urn:tag",
+     "subtype": "urn:tag:genre:music",
+     "entity_id": "2ABA0931-5B34-4074-8285-28034D517B0E",
+     "popularity": 0.9991337,
+     "query": {
+      "count": "1"
+     }
+    },
+    {
+     "tag_id": "urn:tag:audience:qloo:devoted",
+     "name": "Devoted",
+     "type": "urn:tag",
+     "subtype": "urn:tag:audience:qloo",
+     "entity_id": "2D86A43C-3F49-4224-8038-CB7FD69BA250",
+     "popularity": 0.9739646,
+     "query": {
+      "count": "1"
+     }
+    },
+    {
+     "tag_id": "urn:tag:artist:qloo:introspective",
+     "name": "Introspective",
+     "type": "urn:tag",
+     "subtype": "urn:tag:artist:qloo",
+     "entity_id": "37B3BB7B-51D4-43D1-BE6B-03C60CB4A1D1",
+     "popularity": 0.948403,
+     "query": {
+      "count": "1"
+     }
+    },
+    {
+     "tag_id": "urn:tag:instrument:qloo:guitar",
+     "name": "Guitar",
+     "type": "urn:tag",
+     "subtype": "urn:tag:instrument:qloo",
+     "entity_id": "48648868-95A5-4F0B-B517-71ECBB9F4EBD",
+     "popularity": 0.9918993,
+     "query": {
+      "count": "1"
+     }
+    },
+    {
+     "tag_id": "urn:tag:artist:qloo:melancholic",
+     "name": "Melancholic",
+     "type": "urn:tag",
+     "subtype": "urn:tag:artist:qloo",
+     "entity_id": "4AE0E6A4-3DA9-48A0-AD3D-567FD0758381",
+     "popularity": 0.87571645,
+     "query": {
+      "count": "1"
+     }
+    },
+    {
+     "tag_id": "urn:tag:artist:qloo:haunting",
+     "name": "Haunting",
+     "type": "urn:tag",
+     "subtype": "urn:tag:artist:qloo",
+     "entity_id": "5292A9EE-FEDF-4410-9449-6A7D5F4ED7E6",
+     "popularity": 0.6706573,
+     "query": {
+      "count": "1"
+     }
+    },
+    {
+     "tag_id": "urn:tag:artist:qloo:poetic",
+     "name": "Poetic",
+     "type": "urn:tag",
+     "subtype": "urn:tag:artist:qloo",
+     "entity_id": "56DD2CBC-5E10-41DD-A9F3-0389C5F5BCA8",
+     "popularity": 0.78202134,
+     "query": {
+      "count": "1"
+     }
+    },
+    {
+     "tag_id": "urn:tag:genre:music:indie",
+     "name": "Indie",
+     "type": "urn:tag",
+     "subtype": "urn:tag:genre:music",
+     "entity_id": "585E738B-3D23-4F9C-A30C-FB31A930D30B",
+     "popularity": 0.9996067,
+     "query": {
+      "count": "1"
+     }
+    },
+    {
+     "tag_id": "urn:tag:music:qloo:melancholic",
+     "name": "Melancholic",
+     "type": "urn:tag",
+     "subtype": "urn:tag:music:qloo",
+     "entity_id": "5E196B69-ED2E-4793-AD87-C2EB41DE2680",
+     "popularity": 0.94951236,
+     "query": {
+      "count": "1"
+     }
+    },
+    {
+     "tag_id": "urn:tag:theme:qloo:loneliness",
+     "name": "Loneliness",
+     "type": "urn:tag",
+     "subtype": "urn:tag:theme:qloo",
+     "entity_id": "60FB17DB-0BBB-43A9-A701-D1910F18A418",
+     "popularity": 0.8906582,
+     "query": {
+      "count": "1"
+     }
+    },
+    {
+     "tag_id": "urn:tag:audience:qloo:introspective",
+     "name": "Introspective",
+     "type": "urn:tag",
+     "subtype": "urn:tag:audience:qloo",
+     "entity_id": "76E6FB2C-35A8-4283-BB87-9B0E94BAA8A7",
+     "popularity": 0.9888717,
+     "query": {
+      "count": "1"
+     }
+    },
+    {
+     "tag_id": "urn:tag:instrument:qloo:piano",
+     "name": "Piano",
+     "type": "urn:tag",
+     "subtype": "urn:tag:instrument:qloo",
+     "entity_id": "80C2C13B-39EB-4DAF-90EB-C43D84162858",
+     "popularity": 0.9774776,
+     "query": {
+      "count": "1"
+     }
+    },
+    {
+     "tag_id": "urn:tag:theme:qloo:mental_health",
+     "name": "Mental Health",
+     "type": "urn:tag",
+     "subtype": "urn:tag:theme:qloo",
+     "entity_id": "B30FF206-3A3D-40BA-896B-24C332E9CDEE",
+     "popularity": 0.9464038,
+     "query": {
+      "count": "1"
+     }
+    },
+    {
+     "tag_id": "urn:tag:style:qloo:intimate",
+     "name": "Intimate",
+     "type": "urn:tag",
+     "subtype": "urn:tag:style:qloo",
+     "entity_id": "BF2FC01A-8DBA-40F4-B564-AF1A99817E2B",
+     "popularity": 0.9891952,
+     "query": {
+      "count": "1"
+     }
+    },
+    {
+     "tag_id": "urn:tag:theme:qloo:death",
+     "name": "Death",
+     "type": "urn:tag",
+     "subtype": "urn:tag:theme:qloo",
+     "entity_id": "E687E5A3-B1F5-4EBF-B104-E0B3F6B8F1AA",
+     "popularity": 0.90774935,
+     "query": {
+      "count": "1"
+     }
+    },
+    {
+     "tag_id": "urn:tag:audience:qloo:loyal",
+     "name": "Loyal",
+     "type": "urn:tag",
+     "subtype": "urn:tag:audience:qloo",
+     "entity_id": "EDDB06AD-35FE-431E-A2A5-4F5589471FEE",
+     "popularity": 0.99202645,
+     "query": {
+      "count": "1"
+     }
+    },
+    {
+     "tag_id": "urn:tag:style:qloo:subdued",
+     "name": "Subdued",
+     "type": "urn:tag",
+     "subtype": "urn:tag:style:qloo",
+     "entity_id": "F425157C-83A8-4239-8FBC-5D84B8E180BB",
+     "popularity": 0.9152029,
+     "query": {
+      "count": "1"
+     }
+    }
+   ],
+   "b": [
+    {
+     "tag_id": "urn:tag:genre:music:acoustic",
+     "name": "Acoustic",
+     "type": "urn:tag",
+     "subtype": "urn:tag:genre:music",
+     "entity_id": "01CE9B17-0736-4602-8A31-443189C547EA",
+     "popularity": 0.99888253,
+     "query": {
+      "count": "1"
+     }
+    },
+    {
+     "tag_id": "urn:tag:theme:qloo:heartbreak",
+     "name": "Heartbreak",
+     "type": "urn:tag",
+     "subtype": "urn:tag:theme:qloo",
+     "entity_id": "1157CA05-F10E-4C89-A1B1-10DBE72F1272",
+     "popularity": 0.976842,
+     "query": {
+      "count": "1"
+     }
+    },
+    {
+     "tag_id": "urn:tag:theme:qloo:fame",
+     "name": "Fame",
+     "type": "urn:tag",
+     "subtype": "urn:tag:theme:qloo",
+     "entity_id": "1E978B9B-280D-41D5-98E0-E216FBA13DF0",
+     "popularity": 0.870031,
+     "query": {
+      "count": "1"
+     }
+    },
+    {
+     "tag_id": "urn:tag:style:qloo:expressive",
+     "name": "Expressive",
+     "type": "urn:tag",
+     "subtype": "urn:tag:style:qloo",
+     "entity_id": "241982E6-3CCA-42C2-81EC-A5DC7E99896A",
+     "popularity": 0.9734908,
+     "query": {
+      "count": "1"
+     }
+    },
+    {
+     "tag_id": "urn:tag:genre:music:country",
+     "name": "Country",
+     "type": "urn:tag",
+     "subtype": "urn:tag:genre:music",
+     "entity_id": "26276324-A74E-4A5B-AB3B-616E2DED8F67",
+     "popularity": 0.99886686,
+     "query": {
+      "count": "1"
+     }
+    },
+    {
+     "tag_id": "urn:tag:genre:music:singer_songwriter",
+     "name": "Singer & Songwriter",
+     "type": "urn:tag",
+     "subtype": "urn:tag:genre:music",
+     "entity_id": "2ABA0931-5B34-4074-8285-28034D517B0E",
+     "popularity": 0.9991337,
+     "query": {
+      "count": "1"
+     }
+    },
+    {
+     "tag_id": "urn:tag:music:qloo:catchy",
+     "name": "Catchy",
+     "type": "urn:tag",
+     "subtype": "urn:tag:music:qloo",
+     "entity_id": "3CA468CF-B702-4C37-A9B8-EA098F7A608E",
+     "popularity": 0.9790145,
+     "query": {
+      "count": "1"
+     }
+    },
+    {
+     "tag_id": "urn:tag:style:qloo:engaging",
+     "name": "Engaging",
+     "type": "urn:tag",
+     "subtype": "urn:tag:style:qloo",
+     "entity_id": "3F4ACC42-080A-4FC3-85F1-BE70AA7B774A",
+     "popularity": 0.99495006,
+     "query": {
+      "count": "1"
+     }
+    },
+    {
+     "tag_id": "urn:tag:theme:qloo:self_discovery",
+     "name": "Self-discovery",
+     "type": "urn:tag",
+     "subtype": "urn:tag:theme:qloo",
+     "entity_id": "461712D3-F361-489F-8736-49ABB2DF7F30",
+     "popularity": 0.97895676,
+     "query": {
+      "count": "1"
+     }
+    },
+    {
+     "tag_id": "urn:tag:instrument:qloo:guitar",
+     "name": "Guitar",
+     "type": "urn:tag",
+     "subtype": "urn:tag:instrument:qloo",
+     "entity_id": "48648868-95A5-4F0B-B517-71ECBB9F4EBD",
+     "popularity": 0.9918993,
+     "query": {
+      "count": "1"
+     }
+    },
+    {
+     "tag_id": "urn:tag:style:qloo:dynamic",
+     "name": "Dynamic",
+     "type": "urn:tag",
+     "subtype": "urn:tag:style:qloo",
+     "entity_id": "4900E325-E17B-482E-A421-A36C21F51569",
+     "popularity": 0.9926158,
+     "query": {
+      "count": "1"
+     }
+    },
+    {
+     "tag_id": "urn:tag:audience:qloo:dedicated",
+     "name": "DedicateD",
+     "type": "urn:tag",
+     "subtype": "urn:tag:audience:qloo",
+     "entity_id": "5A0F0ADE-6B19-49BB-9AB7-BD1505D4AF68",
+     "popularity": 0.9908824,
+     "query": {
+      "count": "1"
+     }
+    },
+    {
+     "tag_id": "urn:tag:audience:qloo:engaged",
+     "name": "Engaged",
+     "type": "urn:tag",
+     "subtype": "urn:tag:audience:qloo",
+     "entity_id": "5F245FF9-FAFD-4F73-AA93-20374F31659A",
+     "popularity": 0.98003143,
+     "query": {
+      "count": "1"
+     }
+    },
+    {
+     "tag_id": "urn:tag:artist:qloo:emotional",
+     "name": "Emotional",
+     "type": "urn:tag",
+     "subtype": "urn:tag:artist:qloo",
+     "entity_id": "5F503005-16CE-467C-9C8C-18EB6BE7AC2B",
+     "popularity": 0.9271286,
+     "query": {
+      "count": "1"
+     }
+    },
+    {
+     "tag_id": "urn:tag:music:qloo:emotional",
+     "name": "Emotional",
+     "type": "urn:tag",
+     "subtype": "urn:tag:music:qloo",
+     "entity_id": "75D0C1C0-F4FD-40AD-B268-A0ED17CAE7BA",
+     "popularity": 0.9768998,
+     "query": {
+      "count": "1"
+     }
+    },
+    {
+     "tag_id": "urn:tag:instrument:qloo:piano",
+     "name": "Piano",
+     "type": "urn:tag",
+     "subtype": "urn:tag:instrument:qloo",
+     "entity_id": "80C2C13B-39EB-4DAF-90EB-C43D84162858",
+     "popularity": 0.9774776,
+     "query": {
+      "count": "1"
+     }
+    },
+    {
+     "tag_id": "urn:tag:theme:qloo:empowerment",
+     "name": "Empowerment",
+     "type": "urn:tag",
+     "subtype": "urn:tag:theme:qloo",
+     "entity_id": "89FDE209-CC09-42D4-8F95-FE1E0019FC87",
+     "popularity": 0.97342145,
+     "query": {
+      "count": "1"
+     }
+    },
+    {
+     "tag_id": "urn:tag:artist:qloo:charismatic",
+     "name": "Charismatic",
+     "type": "urn:tag",
+     "subtype": "urn:tag:artist:qloo",
+     "entity_id": "A48B3E48-36AE-495B-91ED-4392ED0D5320",
+     "popularity": 0.9714454,
+     "query": {
+      "count": "1"
+     }
+    },
+    {
+     "tag_id": "urn:tag:music:qloo:melodic",
+     "name": "Melodic",
+     "type": "urn:tag",
+     "subtype": "urn:tag:music:qloo",
+     "entity_id": "AEDE7DAB-D607-41AD-AAB7-77048675DCAD",
+     "popularity": 0.9827355,
+     "query": {
+      "count": "1"
+     }
+    },
+    {
+     "tag_id": "urn:tag:style:qloo:energetic",
+     "name": "Energetic",
+     "type": "urn:tag",
+     "subtype": "urn:tag:style:qloo",
+     "entity_id": "DDA96216-6F10-4D64-BA4B-3553DA45652B",
+     "popularity": 0.9932398,
+     "query": {
+      "count": "1"
+     }
+    }
+   ],
+   "matchEntities": []
+  },
+  "provenance": {
+   "endpoint": "/v2/analysis/compare",
+   "requests": [
+    {
+     "method": "GET",
+     "path": "/v2/analysis/compare",
+     "query": {
+      "a.signal.interests.entities": [
+       "AFBC71A7-9439-4AB0-AB68-D14B11AAF836"
+      ],
+      "b.signal.interests.entities": [
+       "4BBEF799-A0C4-4110-AB01-39216993C312"
+      ],
+      "take": 6
+     }
+    }
+   ]
+  }
+ }
+}

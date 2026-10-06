@@ -4,7 +4,7 @@ import { useCallback, useRef, useState } from "react";
 import type { Insight } from "@/lib/guard";
 import type { Source } from "@/lib/evidence";
 import type { CapturedRun } from "@/lib/tour/presets";
-import type { AskEvent, City, FanProfile, FollowUp, StopData, TourEvent, TourInput, TourPlan } from "@/lib/tour/types";
+import type { AskEvent, City, Coverage, FanProfile, FollowUp, StopData, TourEvent, TourInput, TourPlan } from "@/lib/tour/types";
 
 export type StopView = StopData & { order?: number; why?: Insight; pitch?: Insight; textDone?: boolean };
 export type RunOrigin =
@@ -22,6 +22,7 @@ export type RunState = {
   sources: Source[];
   fan?: FanProfile;
   cities: City[];
+  coverage?: Coverage;
   stops: StopView[];
   summary?: Insight;
   plan?: TourPlan;
@@ -58,6 +59,7 @@ function fromPlan(plan: TourPlan): RunState {
     fan: plan.fan,
     sources: plan.sources,
     cities: plan.stops.map((s) => s.city),
+    coverage: plan.coverage,
     stops: plan.stops.map((s) => ({ ...s, textDone: true })),
     followUps: plan.followUps ?? [],
   };
@@ -76,7 +78,7 @@ function reduce(state: RunState, event: TourEvent): RunState {
     case "fan":
       return { ...state, fan: event.fan };
     case "cities":
-      return { ...state, cities: event.cities };
+      return { ...state, cities: event.cities, coverage: event.coverage };
     case "stop":
       return { ...state, stops: [...state.stops.filter((s) => s.stopId !== event.stop.stopId), event.stop].sort((a, b) => a.rank - b.rank) };
     case "writing":
@@ -94,6 +96,7 @@ function reduce(state: RunState, event: TourEvent): RunState {
         plan: event.plan,
         summary: event.plan.summary,
         fan: event.plan.fan,
+        coverage: event.plan.coverage ?? state.coverage,
         sources: event.plan.sources,
         stops: event.plan.stops.map((s) => ({ ...s, textDone: true })),
       };

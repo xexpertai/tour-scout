@@ -27,16 +27,16 @@ export function AffinityScore({ value, sample, evidence }: { value: number; samp
     <div className="relative w-28 shrink-0 text-right">
       <div className="flex items-center justify-end gap-1.5">
         <span className="font-mono text-3xl font-bold leading-none">{score}</span>
-        <button type="button" aria-expanded={open} aria-label="What is fan affinity?" onClick={() => setOpen(!open)}
+        <button type="button" aria-expanded={open} aria-label="What is room affinity?" onClick={() => setOpen(!open)}
           className="no-print grid h-7 w-7 place-items-center rounded-full border border-line font-mono text-xs text-muted hover:text-ink">?</button>
       </div>
       <div className="mt-1.5 h-1.5 rounded-full bg-surface-2"><div className="h-full rounded-full bg-accent" style={{ width: `${score}%` }} /></div>
       <div className="mt-1 flex items-center justify-end gap-1 font-mono text-[10px] uppercase tracking-wider text-muted">
-        fan affinity <Chip kind={sample ? "sample" : "qloo"} /> <Cites ids={[evidence]} />
+        room affinity <Chip kind={sample ? "sample" : "qloo"} /> <Cites ids={[evidence]} />
       </div>
       {open && (
         <p role="note" className="absolute right-0 top-full z-20 mt-2 w-64 rounded-lg border border-line bg-surface-2 p-3 text-left text-xs leading-relaxed text-ink shadow-xl">
-          Qloo&apos;s score (0–100) for how strongly this place&apos;s aggregate taste lines up with the artist&apos;s audience, used here to rank cities against each other.
+          Qloo&apos;s affinity (0–100) between the act&apos;s audience, in aggregate, and the best-matching live room in this city. The same measure for every city, so it ranks cities against each other.
           It is not a ticket, attendance or sales forecast.
         </p>
       )}

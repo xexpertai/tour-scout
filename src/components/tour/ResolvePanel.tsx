@@ -6,7 +6,7 @@ import type { ArtistKind, ArtistRef, TourInput } from "@/lib/tour/types";
 import { Chip, clean, isSample } from "./atoms";
 
 type Resolved = { status: "resolved" | "ambiguous" | "not_found"; candidates: Candidate[] };
-const REGIONS = ["United States", "India", "United Kingdom", "Canada", "Australia", "Germany"];
+const REGIONS = ["United States", "United Kingdom", "Canada", "Australia", "Germany", "India"];
 
 async function resolveName(name: string, kind: ArtistKind): Promise<Resolved> {
   const res = await fetch("/api/tour/resolve", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, kind }) });
@@ -175,7 +175,7 @@ export function ResolvePanel({ query, onStart, onCancel }: { query: { name: stri
               {result.candidates.map((c, i) => <CandidateRow key={c.id} c={c} selected={i === selected} onSelect={() => setSelected(i)} />)}
             </div>
             {result.candidates[selected]?.arenaScale && (
-              <p className="mt-3 text-sm text-muted">Arena-scale act: the plan still works, but venue suggestions may skew large.</p>
+              <p className="mt-3 text-sm text-muted">Arena-scale act: the plan shows where the fans are, but the rooms are the club and theatre rooms this audience favours, not arenas.</p>
             )}
             <button type="button" onClick={() => setEmerging(true)} className="mt-3 min-h-11 text-sm text-muted underline underline-offset-4 hover:text-ink">
               None of these — plan as an emerging act

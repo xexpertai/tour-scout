@@ -1,0 +1,107 @@
+{
+  "_meta": {
+    "note": "Canonical video script. Each line is spoken by Kokoro af_heart and shown as a caption; 'take' names a scripted Playwright take in scripts/video/takes.py (card:<id> = a still from scripts/video/cards.html). Build: scripts/video/make-draft.sh <out_dir>.",
+    "voice": "af_heart",
+    "maxSeconds": 150,
+    "rules": "No greeting; the voice never claims to be a person. No statistic unless verified against a primary source and cited on screen (the hook uses none). No credentials or personal data on screen. Specific names in lines must match the filmed live run (takes.py prints them).",
+    "endcard": "Credit is on-screen text only. Replace DEMO_URL / REPO_URL in scripts/video/cards.html after the user approves hosting and a public repo."
+  },
+  "scenes": [
+    {
+      "id": "hook",
+      "take": "card:hook",
+      "lines": [
+        "Every tour is a bet.",
+        "Book the wrong room in the wrong city, and the empty seats are yours to pay for.",
+        "Big acts have data teams. Small acts route by guesswork."
+      ]
+    },
+    {
+      "id": "live",
+      "take": "live",
+      "lines": [
+        "Tour Scout plans the tour from where the fans actually are.",
+        "Type an act, confirm it's the right one on Qloo, and choose the stops.",
+        "Then it scouts live. Each Qloo call lands as a numbered source."
+      ],
+      "minSeconds": 17
+    },
+    {
+      "id": "route",
+      "take": "route",
+      "lines": [
+        "Qloo's fan map finds where this audience concentrates across the country.",
+        "Each hotspot is snapped to a touring city, and every city is scored by how strongly these fans favour its live rooms.",
+        "For Big Thief, that's a tight New England run."
+      ]
+    },
+    {
+      "id": "ticket",
+      "take": "ticket",
+      "lines": [
+        "Each stop shows the neighbourhood where fans cluster, real rooms they favour, and an opener whose audience shares their taste."
+      ]
+    },
+    {
+      "id": "pitch",
+      "take": "pitch",
+      "lines": [
+        "Claude Haiku drafts a pitch for each booker.",
+        "Every line cites Qloo evidence, and a guard withholds what the data can't support, like turnout promises or invented room sizes."
+      ]
+    },
+    {
+      "id": "scout",
+      "take": "scout",
+      "lines": [
+        "Ask the scout a question.",
+        "An agent picks Qloo tools, runs them, and proposes a change."
+      ]
+    },
+    {
+      "id": "proposal",
+      "take": "proposal",
+      "lines": [
+        "The server checks every proposal against what the scout actually found. Nothing changes until you apply it."
+      ]
+    },
+    {
+      "id": "sources",
+      "take": "sources",
+      "lines": [
+        "Every number links to its Qloo request. Tap a Q-number to see exactly what was asked.",
+        "No credentials and no personal data. Only aggregate taste."
+      ]
+    },
+    {
+      "id": "presets",
+      "take": "presets",
+      "lines": [
+        "It works for stand-up comedians too, with comedy clubs and club comics as openers.",
+        "And for new acts, planned from the fans of artists they sound like."
+      ]
+    },
+    {
+      "id": "how",
+      "take": "card:how",
+      "lines": [
+        "Under the hood: Qloo's where-popular, recommend, compare-audiences and tag workflows, through the official Qloo harness."
+      ]
+    },
+    {
+      "id": "close",
+      "take": "card:close",
+      "lines": [
+        "Tour Scout. Find your fans before you book the room."
+      ]
+    },
+    {
+      "id": "endcard",
+      "take": "card:endcard",
+      "lines": [
+        "Thanks for watching."
+      ],
+      "minSeconds": 3.5
+    }
+  ]
+}

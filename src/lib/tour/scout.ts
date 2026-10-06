@@ -13,9 +13,10 @@ import { EvidenceLedger } from "../evidence.ts";
 import { areaName } from "../geo.ts";
 import { insightGuard } from "../guard.ts";
 import { CLAUDE_MODEL, LlmError, logUsage, takeDailyBudget } from "../llm.ts";
-import { compareAudiences, rankOptions, recommend, signalHeatmap, wherePopular, type QEntity } from "../qloo.ts";
+import { compareAudiences, fanHeatmap, recommend } from "../qloo.ts";
 import { clean, possessive } from "../text.ts";
-import { makeStepper, toCity, venueTagFor, type StepSink } from "./pipeline.ts";
+import { discoverCities, placeFor, scoreCities, scoreCity } from "./cities.ts";
+import { COMEDIAN_TAGS, isRelatedAct, makeStepper, venueTagFor, type StepSink } from "./pipeline.ts";
 import type { City, FollowUp, GhostPin, Opener, PlanDiff, TourPlan } from "./types.ts";
 
 export const MAX_ROUNDS = 4;
@@ -36,9 +37,9 @@ export interface AgentModel {
 
 const str = { type: "string" } as const;
 export const SCOUT_TOOLS = [
-  { name: "rank_cities", description: "Rank up to 6 cities against the plan's current stops by the fans' Qloo affinity (0–100). Use to compare a new city with the route.",
+  { name: "rank_cities", description: "Score up to 6 cities by room affinity (0–100: how strongly these fans line up with the city's best-matching live room) and rank them with the plan's current stops, which use the same score.",
     input_schema: { type: "object", properties: { cities: { type: "array", items: str, maxItems: 6 } }, required: ["cities"] } },
-  { name: "find_cities", description: "Discover the cities in a country or region with the strongest affinity for these fans (Qloo locality recommendations).",
+  { name: "find_cities", description: "Discover cities in a country or region from Qloo's fan heatmap (hotspots snapped to touring markets), each scored by room affinity.",
     input_schema: { type: "object", properties: { region: { ...str, description: "e.g. 'Tennessee', 'Pacific Northwest', 'United States'" } }, required: ["region"] } },
   { name: "fan_cluster", description: "Where in one city the fans concentrate (neighbourhood).",
     input_schema: { type: "object", properties: { city: str }, required: ["city"] } },
@@ -62,8 +63,10 @@ export const SCOUT_TOOLS = [
 export const SCOUT_RULES = `You are Tour Scout, a touring strategist for independent musicians and comedians, working only from Qloo taste data.
 Use the tools to answer the user's request about their tour plan, then call propose_change exactly once.
 - At most ${MAX_ROUNDS} rounds of tool calls; call independent tools together in one round.
+- When the request asks for a change (swap, add, drop, or an opener for a stop) and the tool results support one, put it in propose_change's fields (add_cities, remove_stop_ids, set_opener) rather than only describing it. For an opener, check audience_overlap first and set set_opener with that stop_id and entity_id.
+- Put Q-ids in the evidence field, not inside the answer text.
 - Only propose cities that appeared in a rank_cities or find_cities result, and only remove existing stop_ids. Keep 2–6 stops.
-- Scores are Qloo fan affinity on a 0–100 scale for ranking places against each other. Never present them as attendance, ticket sales, certainty, cause, or a prediction about any individual. Never forecast turnout.
+- City scores are Qloo room affinity on a 0–100 scale for ranking cities against each other. Never present them as attendance, ticket sales, certainty, cause, or a prediction about any individual. Never forecast turnout.
 - Never state or imply income, wealth, class or sensitive traits of fans or places. Never invent venues, places, artists or numbers.
 - The answer is at most 70 words, cites the evidence ids (Q…) of the tool results it relies on, and says plainly if the data does not support a change.`;
 
@@ -125,7 +128,7 @@ export function scriptedAgentModel(plan: TourPlan, question: string): AgentModel
       if (turns === 0 && fewer >= 2 && fewer < plan.stops.length) {
         const drop = [...plan.stops].sort((a, b) => a.city.affinity - b.city.affinity).slice(0, plan.stops.length - fewer);
         return { calls: [{ id: id(0), name: "propose_change", input: {
-          answer: `For a ${fewer}-stop run, drop the stops with the lowest fan affinity: ${drop.map((s) => `${clean(s.city.name)} (${score(s.city.affinity)})`).join(", ")}.`,
+          answer: `For a ${fewer}-stop run, drop the stops with the lowest room affinity: ${drop.map((s) => `${clean(s.city.name)} (${score(s.city.affinity)})`).join(", ")}.`,
           evidence: [...new Set(drop.map((s) => s.city.evidence))],
           remove_stop_ids: drop.map((s) => s.stopId),
         } }], text: "" };
@@ -140,8 +143,8 @@ export function scriptedAgentModel(plan: TourPlan, question: string): AgentModel
         return { calls: [{ id: id(0), name: "rank_cities", input: { cities: found.slice(0, 2).map((c: any) => c.city) } }], text: "" };
       }
       const ranking: any[] = results.find((r) => r.ranking)?.ranking ?? [];
-      const rankEvidence: string = results.find((r) => r.ranking)?.evidence_id;
       const best = ranking.find((c) => !c.on_route);
+      const rankEvidence: string | undefined = best?.evidence_id ?? results.find((r) => r.ranking)?.evidence_id;
       const weakScore = ranking.find((c) => clean(c.city).toLowerCase() === clean(weakest.city.name).toLowerCase())?.score;
       const opener = results.find((r) => r.openers)?.openers?.[0];
       const openerEvidence: string | undefined = results.find((r) => r.openers)?.evidence_id;
@@ -163,6 +166,19 @@ export function scriptedAgentModel(plan: TourPlan, question: string): AgentModel
   };
 }
 
+/**
+ * Strips what the model sometimes leaks into the answer string: tool-call markup, and the evidence
+ * list it should have put in its own field (e.g. `…lineup.",\n["Q30", "Q32"]`).
+ */
+export function cleanAnswer(raw: string): string {
+  return raw
+    .replace(/<\/?(?:parameter|invoke|antml:[a-z_]+)[^>]*>/gi, "")
+    .replace(/["'”]?\s*,?\s*\[\s*"?Q\d+"?(?:\s*,\s*"?Q\d+"?)*\s*\]\s*$/, "")
+    .replace(/["'\s,]+$/, "")
+    .replace(/^["'\s]+/, "")
+    .trim();
+}
+
 // ---------------------------------------------------------------- the loop
 const score = (n?: number) => (n === undefined ? null : Math.round(n * 100));
 const sameCity = (a: string, b: string) => clean(a).toLowerCase() === clean(b).toLowerCase();
@@ -172,7 +188,7 @@ function planBrief(plan: TourPlan, question: string): string {
     request: question,
     act: { name: clean(plan.artist.name), type: plan.artist.type, sounds_like: plan.artist.proxyOf?.map(clean) },
     region: plan.inputs.region ?? null,
-    stops: plan.stops.map((s) => ({ stop_id: s.stopId, order: s.order, city: clean(s.city.name), score: score(s.city.affinity), opener: s.opener ? clean(s.opener.name) : null })),
+    stops: plan.stops.map((s) => ({ stop_id: s.stopId, order: s.order, city: clean(s.city.name), score: score(s.city.affinity), fan_hotspot: Boolean(s.city.hotspot), opener: s.opener ? clean(s.opener.name) : null })),
   });
 }
 
@@ -190,30 +206,25 @@ export async function runScout(plan: TourPlan, question: string, model: AgentMod
   const ledger = new EvidenceLedger(Math.max(0, ...usedIds));
   const step = makeStepper(ledger, out, signal);
   const who = plan.artist.proxyOf?.length ? `fans of ${plan.artist.proxyOf.map(clean).join(", ")}` : `${possessive(plan.artist.name)} fans`;
-  const isArtistMode = !plan.artist.proxyOf?.length;
   const stopCities = plan.stops.map((s) => clean(s.city.name));
 
   // What this session has seen; proposals may only use these.
   const seenCities = new Map<string, City>();
   const seenOpeners = new Map<string, Opener>();
   const pins: GhostPin[] = [];
-  // Scores from rank_cities compare cities with the stops directly, so they override earlier ones.
-  const rankedScores = new Map<string, { affinity: number; evidence: string }>();
-  const remember = async (entities: QEntity[], evidence: string, fromRank = false) => {
-    for (const e of entities) {
-      const key = clean(e.name).toLowerCase();
-      if (fromRank) rankedScores.set(key, { affinity: e.affinity ?? 0, evidence });
-      const known = seenCities.get(key);
-      if (known) {
-        if (fromRank) seenCities.set(key, { ...known, affinity: e.affinity ?? known.affinity, evidence });
-        continue;
-      }
-      const city = await toCity(e, evidence);
-      seenCities.set(key, city);
-      if (!stopCities.some((c) => sameCity(c, e.name)) && city.lat !== undefined && city.lng !== undefined && pins.length < 6) {
-        pins.push({ name: clean(e.name), lat: city.lat, lng: city.lng, affinity: city.affinity, evidence });
+  const remember = (cities: City[]) => {
+    for (const c of cities) {
+      const key = clean(c.name).toLowerCase();
+      seenCities.set(key, c);
+      if (!stopCities.some((s) => sameCity(s, c.name)) && c.lat !== undefined && c.lng !== undefined && pins.length < 6 && !pins.some((p) => sameCity(p.name, c.name))) {
+        pins.push({ name: clean(c.name), lat: c.lat, lng: c.lng, affinity: c.affinity, evidence: c.evidence });
       }
     }
+  };
+  let venueTag: string | undefined | null = null;
+  const cityCtx = async () => {
+    if (venueTag === null) venueTag = await venueTagFor(plan.artist.type, step);
+    return { signals: plan.signals, who, venueTag };
   };
 
   async function execute(call: ToolCall): Promise<unknown> {
@@ -223,39 +234,53 @@ export async function runScout(plan: TourPlan, question: string, model: AgentMod
       case "rank_cities": {
         const asked = (Array.isArray(i.cities) ? i.cities : []).map((c: unknown) => String(c).slice(0, 80)).filter(Boolean).slice(0, 6);
         if (!asked.length) return { error: "Give at least one city." };
-        const options = [...asked, ...stopCities.filter((c) => !asked.some((a: string) => sameCity(a, c)))];
-        const r = await step((v) => `Ranked ${v.entities.length} cities for ${who}`, () => rankOptions({ options, optionType: "locality", signals: plan.signals }), `${asked.join(", ")} ranked against your stops for ${who}`);
-        if (!r) return { error: "Qloo could not rank these cities." };
-        await remember(r.entities, r.source.id, true);
-        return { evidence_id: r.source.id, ranking: r.entities.map((e, k) => ({ rank: k + 1, city: clean(e.name), score: score(e.affinity), on_route: stopCities.some((c) => sameCity(c, e.name)) })) };
+        const places = await Promise.all(asked.filter((a: string) => !stopCities.some((c) => sameCity(a, c))).map((c: string) => placeFor(c)));
+        const { cities, unscored } = await scoreCities(places, await cityCtx(), step);
+        remember(cities);
+        const all = [...cities.map((c) => ({ c, on_route: false })), ...plan.stops.map((s) => ({ c: s.city, on_route: true }))].sort((a, b) => b.c.affinity - a.c.affinity);
+        return {
+          evidence_id: cities[0]?.evidence,
+          evidence_ids: [...new Set(cities.map((c) => c.evidence))],
+          ranking: all.map((x, k) => ({ rank: k + 1, city: clean(x.c.name), score: score(x.c.affinity), evidence_id: x.c.evidence, on_route: x.on_route, fan_hotspot: Boolean(x.c.hotspot) })),
+          no_rooms_found: unscored,
+        };
       }
       case "find_cities": {
         const region = typeof i.region === "string" ? i.region.slice(0, 80) : "";
-        const r = await step((v) => `Fan hotspots in ${region}: ${v.entities.slice(0, 3).map((e) => clean(e.name)).join(", ")}`,
-          () => recommend({ targetType: "locality", signals: plan.signals, filterLocation: region, limit: 8 }), `Cities in ${region} ranked by ${who}`);
-        if (!r) return { error: `Qloo found no cities for "${region}".` };
-        await remember(r.entities, r.source.id);
-        return { evidence_id: r.source.id, cities: r.entities.map((e) => ({ city: clean(e.name), score: score(e.affinity), on_route: stopCities.some((c) => sameCity(c, e.name)) })) };
+        if (!region) return { error: "Give a region." };
+        const onRoute = new Map(plan.stops.map((s) => [clean(s.city.name).toLowerCase(), s.city]));
+        const { cities, coverage } = await discoverCities(region, 4, await cityCtx(), step, onRoute);
+        if (!cities.length) return { error: `Qloo found no scorable cities for "${region}".` };
+        remember(cities);
+        return {
+          hotspot_evidence_id: coverage.evidence,
+          cities: cities.map((c) => ({ city: clean(c.name), score: score(c.affinity), evidence_id: c.evidence, fan_hotspot: Boolean(c.hotspot), on_route: stopCities.some((s) => sameCity(s, c.name)) })),
+          remote_hotspots_skipped: coverage.remoteCells,
+        };
       }
       case "fan_cluster": {
-        const r = await step((v) => `${city}: ${v.cells.length} fan map cells`,
-          () => (isArtistMode ? wherePopular(plan.signals[0], city, 10) : signalHeatmap({ location: city, entityIds: plan.signals })), `Where ${who} concentrate in ${city}`);
+        const place = await placeFor(city);
+        const r = await step((v) => `${place.name}: ${v.cells.length} fan map cells`, () => fanHeatmap(plan.signals, place.query, 10), `Where ${who} concentrate in ${place.name}`);
         const top = r?.cells.slice().sort((a, b) => b.affinity - a.affinity)[0];
         if (!r || !top) return { error: `No fan map for ${city}.` };
         const name = await areaName(top.lat, top.lng);
-        return { evidence_id: r.source.id, city, cluster: /^-?\d/.test(name) || sameCity(name, city) ? "one part of the city (no local name)" : name, score: score(top.affinity) };
+        return { evidence_id: r.source.id, city: place.name, cluster: /^-?\d/.test(name) || sameCity(name, place.name) ? "one part of the city (no local name)" : name, score: score(top.affinity) };
       }
       case "find_venues": {
-        const venueTag = await venueTagFor(plan.artist.type, step);
-        const r = await step((v) => `${city}: ${v.entities.length} rooms`, () => recommend({ targetType: "place", signals: plan.signals, includeTags: venueTag ? [venueTag] : undefined, filterLocation: city, limit: 4 }), `Venues in ${city} with affinity for ${who}`);
-        if (!r) return { error: `No venues found in ${city}.` };
-        return { evidence_id: r.source.id, venues: r.entities.map((e) => ({ name: clean(e.name), score: score(e.affinity) })) };
+        const scored = await scoreCity(await placeFor(city), await cityCtx(), step);
+        if (!scored) return { error: `No rooms with affinity found in ${city}.` };
+        remember([scored]);
+        return { evidence_id: scored.evidence, city: clean(scored.name), room_affinity: score(scored.affinity), venues: (scored.rooms ?? []).map((e) => ({ name: clean(e.name), score: score(e.affinity) })) };
       }
       case "find_openers": {
         const r = await step((v) => `${city}: openers ${v.entities.slice(0, 2).map((e) => clean(e.name)).join(", ")}`,
-          () => recommend({ targetType: plan.artist.type, signals: plan.signals, signalLocation: city, limit: 5 }), `Similar acts with affinity in ${city}`);
+          () => recommend({ targetType: plan.artist.type, signals: plan.signals, signalLocation: city, limit: 8, ...(plan.artist.type === "person" ? { includeTags: COMEDIAN_TAGS, includeTagsOperator: "union" as const } : {}) }), `Similar acts with affinity in ${city}`);
         if (!r) return { error: `No opener candidates in ${city}.` };
-        const openers = r.entities.filter((e) => !plan.signals.includes(e.id));
+        // Same rule as the pipeline: not the act, not a member of it, and (for a known act) not more popular.
+        const others = r.entities.filter((e) => !plan.signals.includes(e.id) && !isRelatedAct(e.description, plan.artist.proxyOf?.length ? plan.artist.proxyOf : [plan.artist.name]));
+        const cap = plan.artist.proxyOf?.length ? undefined : plan.artist.popularity;
+        const fits = others.filter((e) => cap === undefined || (e.popularity ?? 0) <= cap);
+        const openers = fits.length ? fits : others;
         for (const e of openers) seenOpeners.set(e.id, { entityId: e.id, name: e.name, affinity: e.affinity, evidence: r.source.id });
         return { evidence_id: r.source.id, city, openers: openers.map((e) => ({ entity_id: e.id, name: clean(e.name), score: score(e.affinity) })) };
       }
@@ -297,11 +322,11 @@ export async function runScout(plan: TourPlan, question: string, model: AgentMod
 
   // Validate the proposal against what the session actually saw.
   const validIds = new Set([...plan.sources, ...(plan.followUps ?? []).flatMap((f) => f.sources), ...ledger.sources].map((s) => s.id));
-  const { guard } = insightGuard(validIds, model.name === "scripted");
+  const { guard } = insightGuard(validIds, model.name === "scripted", { capacity: plan.inputs.capacity });
   // Accept the answer as a string (schema) or an object (older shape); strip stray tool markup the
   // model sometimes leaks; if no evidence list came back, use Q-ids the text itself cites.
   const rawAnswer = typeof final?.answer === "string" ? final.answer : typeof final?.answer?.text === "string" ? final.answer.text : fallbackText;
-  const answerText = rawAnswer.replace(/<\/?(?:parameter|invoke|antml:[a-z_]+)[^>]*>/gi, "").trim();
+  const answerText = cleanAnswer(rawAnswer);
   const listed = Array.isArray(final?.evidence) ? final!.evidence : Array.isArray(final?.answer?.evidence) ? final!.answer.evidence : [];
   const evidence = listed.length ? listed : [...answerText.matchAll(/\bQ\d+\b/g)].map((m) => m[0]);
   const answer = guard("answer", answerText ? { text: answerText, evidence } : undefined)
@@ -316,10 +341,7 @@ export async function runScout(plan: TourPlan, question: string, model: AgentMod
   const openerPick = openerStop && plan.stops.some((s) => s.stopId === openerStop) && !remove.includes(openerStop) ? seenOpeners.get(String(final!.set_opener.entity_id)) : undefined;
   const resulting = plan.stops.length - remove.length + add.length;
   const valid = (add.length || remove.length || openerPick) && resulting >= 2 && resulting <= 6;
-  const scoreOf = (id: string) => {
-    const stop = plan.stops.find((s) => s.stopId === id)!;
-    return score(rankedScores.get(clean(stop.city.name).toLowerCase())?.affinity ?? stop.city.affinity);
-  };
+  const scoreOf = (id: string) => score(plan.stops.find((s) => s.stopId === id)!.city.affinity);
   const proposal: PlanDiff | undefined = valid ? {
     add,
     remove,

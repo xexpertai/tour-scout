@@ -1,0 +1,209 @@
+{
+ "_note": "Recorded from the Qloo hackathon API on 2026-10-06 via qloo exec (harness 0.1.26); execution ids removed, no credentials.",
+ "args": [
+  "exec",
+  "recommend"
+ ],
+ "input": {
+  "target_type": "person",
+  "signals": [
+   "3B124908-B8E6-4CF2-8D3E-2E024CD78BBE"
+  ],
+  "signal_location": "Atlanta",
+  "include_tags": [
+   "urn:tag:genre:person:comedian",
+   "urn:tag:occupation:wikidata:stand_up_comedian",
+   "urn:tag:occupation:qloo:comedian"
+  ],
+  "include_tags_operator": "union",
+  "limit": 8
+ },
+ "output": {
+  "schema_version": "1.0-preview.1",
+  "operation": "recommend",
+  "status": "ok",
+  "interpretation": {
+   "target_type": "urn:entity:person",
+   "signals": [
+    {
+     "input": "3B124908-B8E6-4CF2-8D3E-2E024CD78BBE",
+     "entityId": "3B124908-B8E6-4CF2-8D3E-2E024CD78BBE",
+     "name": "Cedric the Entertainer",
+     "type": "urn:entity:person",
+     "match": "identifier"
+    }
+   ],
+   "signal_tags": [],
+   "signal_location": "Atlanta",
+   "include_tags": [
+    {
+     "input": "urn:tag:genre:person:comedian",
+     "tagId": "urn:tag:genre:person:comedian",
+     "name": "urn:tag:genre:person:comedian",
+     "match": "identifier"
+    },
+    {
+     "input": "urn:tag:occupation:wikidata:stand_up_comedian",
+     "tagId": "urn:tag:occupation:wikidata:stand_up_comedian",
+     "name": "urn:tag:occupation:wikidata:stand_up_comedian",
+     "match": "identifier"
+    },
+    {
+     "input": "urn:tag:occupation:qloo:comedian",
+     "tagId": "urn:tag:occupation:qloo:comedian",
+     "name": "urn:tag:occupation:qloo:comedian",
+     "match": "identifier"
+    }
+   ],
+   "include_tags_operator": "union",
+   "exclude_tags": []
+  },
+  "results": [
+   {
+    "entity_id": "D78AF701-17B6-427C-A52F-41AA79816D5E",
+    "name": "Kym Whitley",
+    "type": "urn:entity",
+    "subtype": "urn:entity:person",
+    "popularity": 0.8683206314347528,
+    "affinity": 0.9761352860748969,
+    "properties": {
+     "image": {
+      "url": [
+       "https://commons.wikimedia.org/w/index.php?title=Special:Redirect/file/Kym%20Whitley%20by%20Gage%20Skidmore.jpg"
+      ]
+     }
+    }
+   },
+   {
+    "entity_id": "00851843-7D92-49E3-A530-DE77DE0D9A16",
+    "name": "Gary Owen",
+    "type": "urn:entity",
+    "subtype": "urn:entity:person",
+    "popularity": 0.9238755830008372,
+    "affinity": 0.9714836283738344,
+    "properties": {
+     "image": {
+      "url": [
+       "https://commons.wikimedia.org/w/index.php?title=Special:Redirect/file/Gary%20Owen%20image%20for%20Wikipedia.jpg"
+      ]
+     }
+    }
+   },
+   {
+    "entity_id": "BC177A3C-81A6-46FF-8030-94FA59AB66B4",
+    "name": "Jamie Foxx",
+    "type": "urn:entity",
+    "subtype": "urn:entity:person",
+    "popularity": 0.9901120883660756,
+    "affinity": 0.9694595670913505,
+    "properties": {
+     "image": {
+      "url": [
+       "https://commons.wikimedia.org/w/index.php?title=Special:Redirect/file/TIFF%202019%20jamie%20foxx%20(cropped).jpg"
+      ]
+     }
+    }
+   },
+   {
+    "entity_id": "634E4B44-ADD2-49EF-9CEB-3EFF40C80FD7",
+    "name": "Deon Cole",
+    "type": "urn:entity",
+    "subtype": "urn:entity:person",
+    "popularity": 0.8881616855654972,
+    "affinity": 0.9682366110393263,
+    "properties": {
+     "image": {
+      "url": [
+       "https://commons.wikimedia.org/w/index.php?title=Special:Redirect/file/Deon%20Cole%202016.png",
+       "https://commons.wikimedia.org/w/index.php?title=Special:Redirect/file/Deon%20Cole%20performing%20at%20Chocolate%20Sundaes%20Comedy%20Show,%202011%20(8385567222).jpg"
+      ]
+     }
+    }
+   },
+   {
+    "entity_id": "845BA809-F974-41A5-8438-557D688F6A2D",
+    "name": "Sherri Shepherd",
+    "type": "urn:entity",
+    "subtype": "urn:entity:person",
+    "popularity": 0.9103184353290353,
+    "affinity": 0.9668661249538788,
+    "properties": {
+     "image": {
+      "url": [
+       "https://commons.wikimedia.org/w/index.php?title=Special:Redirect/file/Sherri%20Shepherd.jpg"
+      ]
+     }
+    }
+   },
+   {
+    "entity_id": "D614D77B-1153-49CB-A331-789CFC46DCEE",
+    "name": "DeRay Davis",
+    "type": "urn:entity",
+    "subtype": "urn:entity:person",
+    "popularity": 0.9108837694741305,
+    "affinity": 0.9666459445246683,
+    "properties": {
+     "image": {
+      "url": [
+       "https://commons.wikimedia.org/w/index.php?title=Special:Redirect/file/DeRay%20Davis%202016.png"
+      ]
+     }
+    }
+   },
+   {
+    "entity_id": "B02D5C58-CC3A-4C5E-A71D-5AD22AB7D38E",
+    "name": "Mike Epps",
+    "type": "urn:entity",
+    "subtype": "urn:entity:person",
+    "popularity": 0.986040595340342,
+    "affinity": 0.9652980772648233,
+    "properties": {
+     "image": {
+      "url": [
+       "https://commons.wikimedia.org/w/index.php?title=Special:Redirect/file/Mike%20Epps%202013%20(cropped).jpg"
+      ]
+     }
+    }
+   },
+   {
+    "entity_id": "44C8CDCD-922A-4DB5-8F3C-AE776865BD06",
+    "name": "Carlos Arsenio Mendez Hall",
+    "type": "urn:entity",
+    "subtype": "urn:entity:person",
+    "popularity": 0.8057098748654613,
+    "affinity": 0.9647726075922681,
+    "properties": {
+     "image": {
+      "url": [
+       "https://commons.wikimedia.org/w/index.php?title=Special:Redirect/file/Arsenio%20Hall%202012%20(cropped).jpg"
+      ]
+     }
+    }
+   }
+  ],
+  "result_count": 8,
+  "provenance": {
+   "endpoint": "/v2/insights",
+   "requests": [
+    {
+     "method": "GET",
+     "path": "/v2/insights",
+     "query": {
+      "filter.type": "urn:entity:person",
+      "take": 8,
+      "signal.interests.entities": [
+       "3B124908-B8E6-4CF2-8D3E-2E024CD78BBE"
+      ],
+      "signal.location.query": "Atlanta",
+      "filter.tags": [
+       "urn:tag:genre:person:comedian",
+       "urn:tag:occupation:wikidata:stand_up_comedian",
+       "urn:tag:occupation:qloo:comedian"
+      ],
+      "operator.filter.tags": "union"
+     }
+    }
+   ]
+  }
+ }
+}

@@ -9,7 +9,7 @@ import type { AreaScore, Demographics, InsightsType, QEntity, QlooCall, Resoluti
 const CITIES: Record<string, { name: string; lat: number; lng: number }[]> = {
   us: [
     { name: "Austin", lat: 30.2672, lng: -97.7431 }, { name: "Chicago", lat: 41.8781, lng: -87.6298 },
-    { name: "Brooklyn", lat: 40.6782, lng: -73.9442 }, { name: "Los Angeles", lat: 34.0522, lng: -118.2437 },
+    { name: "New York", lat: 40.7128, lng: -74.006 }, { name: "Los Angeles", lat: 34.0522, lng: -118.2437 },
     { name: "Seattle", lat: 47.6062, lng: -122.3321 }, { name: "Nashville", lat: 36.1627, lng: -86.7816 },
     { name: "Denver", lat: 39.7392, lng: -104.9903 }, { name: "Atlanta", lat: 33.749, lng: -84.388 },
   ],
@@ -85,7 +85,7 @@ export const mock = {
     const rnd = seeded(name);
     const entity: QEntity = {
       id: `sample-${type ?? "artist"}-${slug(name)}`, name: sample(name), type: `urn:entity:${type ?? "artist"}`,
-      popularity: FAMOUS.test(name) ? 0.995 : round2(0.6 + rnd() * 0.3), description: "Sample entity (no Qloo credential configured)",
+      popularity: FAMOUS.test(name) ? 0.9995 : round2(0.6 + rnd() * 0.3), description: "Sample entity (no Qloo credential configured)",
     };
     return delayed({ status: "resolved" as const, entity, call: call("describe", 1) });
   },
@@ -102,18 +102,15 @@ export const mock = {
     const rnd = seeded(`${p.targetType}:${p.filterLocation ?? ""}:${p.signalLocation ?? ""}:${(p.signals ?? p.tagIds ?? []).join()}`);
     const limit = p.limit ?? 8;
     let entities: QEntity[];
-    if (p.targetType === "locality") {
-      entities = CITIES[regionOf(p.filterLocation)].map((c, i) => ({
-        id: `sample-locality-${slug(c.name)}`, name: sample(c.name), type: "urn:entity:locality",
-        lat: c.lat, lng: c.lng, affinity: round2(0.96 - i * 0.06 - rnd() * 0.03),
-      }));
-    } else if (p.targetType === "place") {
-      const center = cityIn(p.filterLocation) ?? CITIES.us[0];
-      entities = VENUES.map((v, i) => ({
+    if (p.targetType === "place") {
+      // A city gets its own rooms; a country gets rooms spread over its sample cities.
+      const inCity = cityIn(p.filterLocation);
+      const centers = inCity ? [inCity] : CITIES[regionOf(p.filterLocation)];
+      const top = round2(0.84 + rnd() * 0.12);
+      entities = VENUES.flatMap((v, i) => centers.map((center, k) => ({
         id: `sample-place-${slug(center.name)}-${i}`, name: sample(v), type: "urn:entity:place",
-        lat: center.lat + (rnd() - 0.5) * 0.04, lng: center.lng + (rnd() - 0.5) * 0.04,
-        address: `${center.name} (sample address)`, affinity: round2(0.9 - i * 0.07 - rnd() * 0.03), rating: round2(4 + rnd()),
-      }));
+        address: `${center.name} (sample address)`, city: center.name, affinity: round2(top - i * 0.04 - k * 0.01 - rnd() * 0.02), rating: round2(4 + rnd()),
+      }))).sort((a, b) => b.affinity - a.affinity);
     } else {
       const pool = NAMES[p.targetType] ?? NAMES.artist!;
       const offset = Math.floor(rnd() * pool.length);
@@ -124,18 +121,18 @@ export const mock = {
     return delayed({ entities: entities.slice(0, limit), call: call("recommend", Math.min(limit, entities.length)) });
   },
 
-  async rank(p: { options: string[]; optionType: InsightsType; signals: string[] }) {
-    const rnd = seeded(`${p.options.join()}:${p.signals.join()}`);
-    const entities = p.options.map((name) => {
-      const c = cityIn(name);
-      return { id: `sample-${p.optionType}-${slug(name)}`, name: sample(name), type: `urn:entity:${p.optionType}`, lat: c?.lat, lng: c?.lng, affinity: round2(0.5 + rnd() * 0.45) };
-    }).sort((a, b) => b.affinity - a.affinity);
-    return delayed({ entities, call: call("rank", entities.length) });
-  },
-
   async heatmap(key: string, workflow: string): Promise<{ cells: AreaScore[]; call: QlooCall }> {
-    const center = cityIn(key) ?? CITIES.us[0];
+    const center = cityIn(key.split(":")[0]);
     const rnd = seeded(key);
+    if (!center) {
+      // A country-wide heatmap: a few hotspot cells near most of the region's sample cities, strongest first.
+      const cities = CITIES[regionOf(key.split(":")[0])];
+      const cells = cities.slice(0, cities.length - 1).flatMap((c, i) => [0, 1].map((k) => {
+        const lat = c.lat + (k ? 0.15 : -0.1), lng = c.lng + (k ? -0.12 : 0.1);
+        return { geohash: geohash.encode(lat, lng, 4), lat, lng, affinity: round2(0.99 - i * 0.01 - k * 0.005), popularity: round2(0.8 + rnd() * 0.2) };
+      }));
+      return delayed({ cells, call: call(workflow, cells.length) });
+    }
     const cells = Array.from({ length: 25 }, (_, i) => {
       const lat = center.lat + (Math.floor(i / 5) - 2) * 0.02, lng = center.lng + ((i % 5) - 2) * 0.02;
       return { geohash: geohash.encode(lat, lng, 6), lat, lng, affinity: round2(rnd()), popularity: round2(rnd()) };

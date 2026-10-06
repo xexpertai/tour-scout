@@ -4,24 +4,28 @@
  * Dependency graph (independent branches run concurrently, bounded by the qloo runner):
  *   fingerprint (entity_tags, audience_demographics) ─┐
  *   cross-domain (recommend brand, movie)            ─┤
- *   cities (recommend locality | rank) ─► per stop: cluster (where_popular | heatmap),
- *                                                   venues (recommend place), openers (recommend) ─► overlap (compare)
+ *   venue tag (find_tags) ─► cities (country-wide where_popular ─► room affinity per city, see cities.ts)
+ *                            ─► per stop: cluster (where_popular in the city), opener (recommend) ─► overlap (compare)
  * Every call is recorded in the evidence ledger and streamed as soon as it lands.
  */
 import { Channel, EvidenceLedger, type Source } from "../evidence.ts";
-import { areaName, geocodeCity } from "../geo.ts";
-import {
-  QlooError, audienceDemographics, compareAudiences, entityTags, findTags, rankOptions, recommend, signalHeatmap, wherePopular,
-  type QEntity, type QlooCall,
-} from "../qloo.ts";
+import { areaName } from "../geo.ts";
+import { QlooError, audienceDemographics, compareAudiences, entityTags, fanHeatmap, findTags, recommend, type QlooCall } from "../qloo.ts";
 import { clean, possessive } from "../text.ts";
-import type { ArtistKind, City, FanProfile, StopData, TourEvent, TourInput } from "./types.ts";
+import { discoverCities, rankShortlist, scoreCity } from "./cities.ts";
+import type { ArtistKind, City, Coverage, FanProfile, StopData, TourEvent, TourInput } from "./types.ts";
 
-/** Qloo popularity is a 0–1 percentile; above this an artist plays arenas, not clubs. */
-export const ARENA_POPULARITY = 0.97;
+export { ARENA_POPULARITY } from "./scale.ts";
+
 const FATAL = new Set(["QLOO_AUTH", "QLOO_NOT_INSTALLED", "QLOO_RATE_LIMIT"]);
 
-export type PhaseAResult = { fan: FanProfile; cities: City[]; stops: StopData[]; ledger: EvidenceLedger };
+export type PhaseAResult = { fan: FanProfile; cities: City[]; stops: StopData[]; ledger: EvidenceLedger; coverage?: Coverage };
+
+/**
+ * Qloo tags that mark a person as a comedian (found with find_tags in M0). Without them, `person`
+ * recommendations for a comedian return actors; with them (union) they return stand-ups.
+ */
+export const COMEDIAN_TAGS = ["urn:tag:genre:person:comedian", "urn:tag:occupation:wikidata:stand_up_comedian", "urn:tag:occupation:qloo:comedian"];
 /** Whatever a stream consumer accepts: a source landed, or a human-readable step happened. */
 export type StepSink = { push(event: Extract<TourEvent, { type: "source" | "step" }>): void };
 export type Stepper = <T>(label: (value: T) => string, fn: () => Promise<T & { call: QlooCall }>, sourceLabel: string) => Promise<(T & { source: Source }) | undefined>;
@@ -51,7 +55,20 @@ export function makeStepper(ledger: EvidenceLedger, out: StepSink, signal?: Abor
   };
 }
 
-export type StopContext = { signals: string[]; who: string; artistType: ArtistKind; isArtistMode: boolean; venueTag?: string };
+export type StopContext = {
+  signals: string[]; who: string; artistType: ArtistKind; isArtistMode: boolean; venueTag?: string;
+  /** The act's Qloo popularity (0–1); openers are picked at or below it when known. */
+  popularity?: number;
+  /** Openers already chosen for other stops, so each stop suggests someone different when possible. */
+  usedOpeners?: Set<string>;
+  /** Names of the act (or its proxies); a candidate whose Qloo description names them is a member or side project, not an opener. */
+  names?: string[];
+};
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/** True when Qloo's description of a candidate mentions the act by name ("lead vocalist of Big Thief"). */
+export const isRelatedAct = (description: string | undefined, names: string[] = []) =>
+  Boolean(description) && names.some((n) => clean(n).length > 2 && new RegExp(`\\b${escapeRe(clean(n))}\\b`, "i").test(description!));
 
 /** Looks up the venue-type tag once per run ("live music venue" or "comedy club"). */
 export async function venueTagFor(artistType: ArtistKind, step: Stepper): Promise<string | undefined> {
@@ -59,15 +76,15 @@ export async function venueTagFor(artistType: ArtistKind, step: Stepper): Promis
   return (await step((v) => `Venue type tag: ${v.tags[0] ? clean(v.tags[0].name) : "none found"}`, () => findTags(query, 3), `Qloo tag for "${query}"`))?.tags[0]?.id;
 }
 
-/** Everything one stop needs: where fans cluster, rooms near them, and an opener with shared tastes. */
+/** Everything one stop needs: where fans cluster, the rooms behind the city's score, and an opener with shared tastes. */
 export async function scoutStop(city: City, index: number, ctx: StopContext, step: Stepper): Promise<StopData> {
   const { signals, who, artistType } = ctx;
   const cityName = clean(city.name);
-  const stop: StopData = { stopId: `s${index + 1}`, rank: index + 1, city, venues: [] };
+  const where = city.query ?? cityName;
+  const stop: StopData = { stopId: `s${index + 1}`, rank: index + 1, city: { ...city, rooms: undefined }, venues: [] };
 
   const clusterTask = step((v) => `${cityName}: fans cluster in ${v.cells.length} map cells`,
-    () => (ctx.isArtistMode ? wherePopular(signals[0], cityName, 10) : signalHeatmap({ location: cityName, entityIds: signals })),
-    `Where ${possessive(who)} fans concentrate in ${cityName}`).then(async (r) => {
+    () => fanHeatmap(signals, where, 10), `Where ${possessive(who)} fans concentrate in ${cityName}`).then(async (r) => {
     const top = r?.cells.slice().sort((a, b) => b.affinity - a.affinity)[0];
     if (!r || !top) return;
     const name = await areaName(top.lat, top.lng);
@@ -76,39 +93,30 @@ export async function scoutStop(city: City, index: number, ctx: StopContext, ste
     stop.cluster = { name: unnamed ? `${top.lat.toFixed(3)},${top.lng.toFixed(3)}` : name, lat: top.lat, lng: top.lng, affinity: top.affinity, evidence: r.source.id };
   });
 
+  const comedian = artistType === "person";
   const openerTask = step((v) => `${cityName}: possible openers ${v.entities.slice(0, 2).map((e) => clean(e.name)).join(", ")}`,
-    () => recommend({ targetType: artistType, signals, signalLocation: cityName, limit: 5 }),
-    `Similar ${artistType === "person" ? "comedians" : "artists"} with affinity in ${cityName}`).then(async (r) => {
-    const pick = r?.entities.find((e) => !signals.includes(e.id));
+    () => recommend({ targetType: artistType, signals, signalLocation: where, includeTags: comedian ? COMEDIAN_TAGS : undefined, includeTagsOperator: comedian ? "union" : undefined, limit: 8 }),
+    `Similar ${comedian ? "comedians" : "artists"} with affinity in ${cityName}`).then(async (r) => {
+    // An opener should not outdraw the act: prefer candidates at or below its popularity, then unused ones.
+    const others = (r?.entities ?? []).filter((e) => !signals.includes(e.id) && !isRelatedAct(e.description, ctx.names));
+    const fits = others.filter((e) => ctx.popularity === undefined || (e.popularity ?? 0) <= ctx.popularity);
+    const pool = fits.length ? fits : others;
+    const pick = pool.find((e) => !ctx.usedOpeners?.has(e.id)) ?? pool[0];
     if (!r || !pick) return;
+    ctx.usedOpeners?.add(pick.id);
     stop.opener = { entityId: pick.id, name: pick.name, affinity: pick.affinity, evidence: r.source.id };
     const overlap = await step((v) => `${cityName}: ${v.shared.length} shared tastes with ${possessive(pick.name)} audience`,
       () => compareAudiences(signals, [pick.id], 6), `Audience overlap between ${clean(who)} and ${clean(pick.name)}`);
     if (overlap) stop.opener.overlap = { shared: overlap.shared, evidence: overlap.source.id };
   });
 
-  // Venues wait for the cluster so they can be searched near it; fall back to the whole city.
-  await clusterTask;
-  const near = stop.cluster && !/^-?\d/.test(stop.cluster.name) ? `${stop.cluster.name}, ${cityName}` : cityName;
-  const includeTags = ctx.venueTag ? [ctx.venueTag] : undefined;
-  let venues = await step((v) => `${cityName}: ${v.entities.length} venues near ${near}`,
-    () => recommend({ targetType: "place", signals, includeTags, filterLocation: near, limit: 4 }),
-    `Venues near ${near} with affinity for ${clean(who)}`);
-  if (venues && !venues.entities.length && near !== cityName) {
-    venues = await step((v) => `${cityName}: ${v.entities.length} venues city-wide`,
-      () => recommend({ targetType: "place", signals, includeTags, filterLocation: cityName, limit: 4 }),
-      `Venues in ${cityName} with affinity for ${clean(who)}`);
-  }
-  stop.venues = (venues?.entities ?? []).map((e) => ({ entityId: e.id, name: e.name, address: e.address, affinity: e.affinity, lat: e.lat, lng: e.lng, evidence: venues!.source.id }));
+  // The rooms that gave the city its score; cities added later (scout proposals) are scored here.
+  const scored = city.rooms ? city : await scoreCity({ name: cityName, query: where, lat: city.lat, lng: city.lng }, ctx, step, city.hotspot);
+  stop.venues = scored?.rooms ?? [];
+  if (scored && !city.rooms) stop.city = { ...stop.city, affinity: scored.affinity, evidence: scored.evidence };
 
-  await openerTask;
+  await Promise.all([clusterTask, openerTask]);
   return stop;
-}
-
-/** A Qloo locality as a City, geocoded through OpenStreetMap when Qloo has no coordinates. */
-export async function toCity(e: QEntity, evidence: string): Promise<City> {
-  const point = e.lat !== undefined && e.lng !== undefined ? { lat: e.lat, lng: e.lng } : await geocodeCity(clean(e.name));
-  return { entityId: e.id, name: e.name, affinity: e.affinity ?? 0, lat: point?.lat, lng: point?.lng, evidence };
 }
 
 export const whoOf = (input: TourInput) =>
@@ -145,18 +153,21 @@ export async function runPhaseA(input: TourInput, out: Channel<TourEvent>, signa
     })));
 
   // Cities are the backbone of the plan: without them there is nothing to schedule.
-  const ranked = input.candidateCities?.length
-    ? await step((v) => `Ranked your ${v.entities.length} cities by fan affinity`,
-      () => rankOptions({ options: input.candidateCities!, optionType: "locality", signals }), `Your candidate cities ranked for ${possessive(who)} fans`)
-    : await step((v) => `Strongest fan affinity: ${v.entities.slice(0, 3).map((e) => clean(e.name)).join(", ")}`,
-      () => recommend({ targetType: "locality", signals, filterLocation: input.region, limit: Math.max(input.stops * 2, 8) }),
-      `Cities${input.region ? ` in ${input.region}` : ""} ranked by ${possessive(who)} fan affinity`);
-  if (!ranked?.entities.length) throw new QlooError("Qloo returned no cities for this artist and region", "TOUR_NO_CITIES", true);
+  const venueTag = await venueTagFor(artistType, step);
+  const cityCtx = { signals, who, venueTag };
+  const found = input.candidateCities?.length
+    ? await rankShortlist(input.candidateCities, cityCtx, step)
+    : await discoverCities(input.region || "United States", input.stops, cityCtx, step);
+  if (!found.cities.length) throw new QlooError("Qloo found no cities with matching rooms for this act and region", "TOUR_NO_CITIES", true);
+  const cities = found.cities;
+  out.push({ type: "step", label: `Strongest cities: ${cities.slice(0, 3).map((c) => `${clean(c.name)} (${Math.round(c.affinity * 100)})`).join(", ")}`, evidence: [...new Set(cities.slice(0, 3).map((c) => c.evidence))] });
+  out.push({ type: "cities", cities: cities.map((c) => ({ ...c, rooms: undefined })), coverage: found.coverage });
 
-  const cities = await Promise.all(ranked.entities.map((e) => toCity(e, ranked.source.id)));
-  out.push({ type: "cities", cities });
-
-  const ctx: StopContext = { signals, who, artistType, isArtistMode: Boolean(input.artist), venueTag: await venueTagFor(artistType, step) };
+  // In emerging mode the "opener" is a support-slot idea: an established act the new act could open for,
+  // so no popularity cap applies (Qloo's similar acts for well-known proxies are all well known).
+  const popularity = input.artist?.popularity;
+  const names = input.artist ? [input.artist.name] : (input.emerging?.proxies ?? []).map((p) => p.name);
+  const ctx: StopContext = { signals, who, artistType, isArtistMode: Boolean(input.artist), venueTag, popularity, usedOpeners: new Set(), names };
   const stops = await Promise.all(cities.slice(0, input.stops).map(async (city, i) => {
     const stop = await scoutStop(city, i, ctx, step);
     out.push({ type: "stop", stop: structuredClone(stop) });
@@ -164,5 +175,5 @@ export async function runPhaseA(input: TourInput, out: Channel<TourEvent>, signa
   }));
 
   await Promise.all([fingerprint, crossDomain]);
-  return { fan, cities, stops, ledger };
+  return { fan, cities: cities.map((c) => ({ ...c, rooms: undefined })), stops, ledger, coverage: found.coverage };
 }

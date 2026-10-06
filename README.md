@@ -1,18 +1,18 @@
 # Tour Scout
 
-**Find your fans before you book the room.** Tour Scout plans a small tour for an indie musician or comedian from where their audience's taste actually is. It reads [Qloo](https://www.qloo.com)'s taste graph to rank cities and the neighbourhoods inside them, picks rooms near the fans, suggests a local opener whose audience shares their tastes, and drafts a booker pitch for every stop. You can then ask an AI scout to rework the route, and apply its proposal with one tap.
+**Find your fans before you book the room.** Tour Scout plans a small tour for an indie musician or comedian from where their audience's taste actually is. It reads [Qloo](https://www.qloo.com)'s taste graph to find the act's fan hotspots across a country, scores each nearby city by the live rooms that audience favours, finds the neighbourhood where fans cluster, suggests an opener whose audience shares their tastes, and drafts a booker pitch for every stop. You can then ask an AI scout to rework the route, and apply its proposal with one tap.
 
 Every number on screen is labelled **QLOO** (returned by Qloo), **AI** (model text citing Qloo evidence), **TEMPLATE** (text filled in by code), or **GENERAL** (model text with no Qloo support). Each label links to the exact Qloo request behind it.
 
 Built for the Qloo Agentic Hackathon. MIT licensed.
 
-![A five-stop route with stop tickets](docs/screenshots/route.png)
+![Big Thief's five-stop New England route from live Qloo data](docs/screenshots/route.png)
 
-> The screenshots show **sample data** (the app's demo mode, before the event's Qloo key arrived). Live-data screenshots will replace them.
+All screenshots show **live Qloo data** (captured runs from 6 Oct 2026; text by Claude Haiku 4.5).
 
 ## Try it in 60 seconds
 
-1. Open the app (hosted link: _pending_) and tap a **demo flyer** such as *Big Thief*. A captured run opens instantly: cities glow, the route draws itself, and the stop tickets slide in.
+1. Open the app (hosted link: _pending_) and tap a **demo flyer** such as *Big Thief*. A captured live run (labelled "Cached run" with its date) opens instantly: cities glow, the route draws itself, and the stop tickets slide in.
 2. Scroll to **Ask the scout** and tap **"Swap the weakest stop for a stronger city"**. Watch the numbered trace as the scout chooses Qloo tools, then read its answer and the proposed change.
 3. Tap **Apply to my tour**. The new stop is scouted (fan cluster, rooms, opener) and the route redraws.
 4. Type any artist or comedian in the search box, confirm the **"Did you mean…?"** card, and scout a live tour.
@@ -31,10 +31,11 @@ Independent musicians, comedians and their managers usually route tours by guess
 
 Qloo's taste graph links artists, comedians, places, brands and films through real-world audience affinity across 250M+ entities in music, film, dining, fashion and more (per the [hackathon page](https://qloo.devpost.com)). Tour Scout depends on that graph at every step:
 
-- **Where the fans are.** Cities are ranked by the artist's audience affinity (`recommend` with locality targets, or `rank` for your own shortlist). `where_popular` then finds the neighbourhood where the fans cluster.
+- **Where the fans are.** One country-wide `where_popular` heatmap finds the act's fan hotspots; each hotspot is snapped to the nearest touring city. Inside each chosen city a second `where_popular` finds the neighbourhood where the fans cluster.
+- **Which cities to play.** Every candidate city is scored by **room affinity**: `recommend` (places, filtered to that city with Qloo's "live music venue" or "comedy club" tag) returns the rooms this audience favours, and the city's score is its best room's affinity. Because it is the same signal scored against places, scores compare cities directly, so your own shortlist, "Why not Denver?" and the scout all use it.
 - **Who they are, in aggregate.** `entity_tags` gives the fan fingerprint, `audience_demographics` the age and gender affinity, and cross-domain `recommend` covers the brands and films the fans like.
-- **Rooms and openers.** Places near the cluster come from `recommend` (places, with a venue-type tag from `find_tags`). Openers come from `recommend` (artists or people), with shared tastes from `compare_audiences`.
-- **Emerging acts.** An act Qloo doesn't know yet is planned from the fans of 1–3 artists it sounds like, and every screen says so.
+- **Rooms and openers.** The rooms behind each city's score are its suggested venues. Openers come from `recommend` (artists, or people with Qloo's comedian tags), never more popular than the act and never a member or side project of it, with shared tastes from `compare_audiences`.
+- **Emerging acts.** An act Qloo doesn't know yet is planned from the fans of 1–3 artists it sounds like, and every screen says so. Its "opener" becomes a *support slot to pitch for*: an established act with overlapping fans that the new act could open for.
 
 Without Qloo there is nothing to rank.
 
@@ -46,7 +47,7 @@ Without Qloo there is nothing to rank.
 Search ──► describe (Qloo) ──► "Did you mean…?"  (the user confirms the entity)
                                      │
 Phase A — data gathering (code-planned, parallel, streamed)
-  fingerprint · cross-domain · cities ──► per stop: cluster ─► venues, opener ─► overlap
+  fingerprint · cross-domain · fan hotspots ─► room affinity per city ─► per stop: cluster, opener ─► overlap
   every Qloo call is recorded as evidence Q1, Q2, …
                                      │
 Phase B — one model call (Claude Haiku 4.5, streamed per stop)
@@ -75,31 +76,59 @@ The route is the shortest open path through the stops: exact for up to 8 stops, 
 
 ## Qloo requests, redacted
 
-All Qloo calls go through the public [`@qloo/qloo-harness`](https://github.com/qloo/qloo-hackathon-kit) CLI (0.1.26), the event's supported surface, against `https://hackathon.api.qloo.com`. The Sources panel ("Credits") shows every request; requests never contain credentials. A typical tour for "Big Thief, 5 stops, United States":
+All Qloo calls go through the public [`@qloo/qloo-harness`](https://github.com/qloo/qloo-hackathon-kit) CLI (0.1.26), the event's supported surface, against `https://hackathon.api.qloo.com`. Every call is a validated `qloo exec` workflow. The Sources panel ("Credits") shows every request; requests never contain credentials.
+
+**Entity and tag choices.** The act is confirmed by the user on a "Did you mean…?" card before anything else runs (here `Big Thief`, artist, popularity 0.991). The room tag is chosen once per run with `find_tags`: `urn:tag:category:place:live_music_venue` for musicians, `urn:tag:category:place:comedy_club` for comedians. Comedian openers are filtered with Qloo's comedian tags (`urn:tag:genre:person:comedian`, stand-up occupation tags), because unfiltered `person` results for a comedian are mostly actors.
+
+**Request → result, from the live Big Thief preset** (United States, 5 stops, 300–900 cap; 29 requests in total):
 
 ```text
-Q1   qloo exec entity_tags            GET /v2/insights  filter.type=urn:tag, signal.interests.entities=<artist id>
-Q2   qloo exec audience_demographics  GET /v2/insights  filter.type=urn:demographics, signal.interests.entities=<artist id>
-Q3   qloo exec recommend (brand)      GET /v2/insights  filter.type=urn:entity:brand, signal.interests.entities=<artist id>, signal.location.query=United States
-Q5   qloo exec recommend (locality)   GET /v2/insights  filter.type=urn:entity:locality, signal.interests.entities=<artist id>, filter.location.query=United States, take=10
-Q6   qloo exec find_tags              GET /v2/tags      filter.query=live music venue, feature.semantic_search=true
-Q7…  qloo exec where_popular          GET /v2/insights  filter.type=urn:heatmap, signal.interests.entities=<artist id>, filter.location.query=<city>
-     qloo exec recommend (place)      GET /v2/insights  filter.type=urn:entity:place, signal.interests.entities=<artist id>, filter.tags=<venue tag>, filter.location.query=<neighbourhood, city>
-     qloo exec recommend (artist)     GET /v2/insights  filter.type=urn:entity:artist, signal.interests.entities=<artist id>, signal.location.query=<city>
-     qloo exec compare_audiences      GET /v2/analysis/compare  a.signal.interests.entities=<artist id>, b.signal.interests.entities=<opener id>
+Q6   where_popular   GET /v2/insights  filter.type=urn:heatmap, signal.interests.entities=<Big Thief>,
+                                       filter.location.query=United States, take=20
+     → 20 hotspot cells (~30 km each). Snapped to touring cities: Northampton, Burlington, Portland ME,
+       Santa Fe, Albany, Hudson Valley, Portland OR, Boston, Austin, Seattle. 3 cells far from any
+       touring city (e.g. far West Texas) are counted, not scheduled.
+
+Q8   recommend       GET /v2/insights  filter.type=urn:entity:place, signal.interests.entities=<Big Thief>,
+                                       filter.location.query=Burlington, Vermont,
+                                       filter.tags=urn:tag:category:place:live_music_venue, take=4
+     → Monkey House 88 · Radio Bean 87 · ArtsRiot 86 · Nectar's 86   ⇒ Burlington room affinity 88
+
+Q7–Q14 (same request for each candidate city)
+     → Boston 89 · Albany 89 · Burlington 88 · Northampton 88 · Portland ME 88 · Portland OR 86 · …
+       ⇒ stops: the five best, routed Burlington → Albany → Northampton → Boston → Portland ME
+
+Q17  where_popular   GET /v2/insights  filter.type=urn:heatmap, filter.location.query=Burlington, Vermont, take=10
+     → strongest cell named via OpenStreetMap: Old North End
+
+Q19  recommend       GET /v2/insights  filter.type=urn:entity:artist, signal.location.query=Burlington, Vermont, take=8
+     → Julia Jacklin (first candidate that is not the act, not a member of it, and not more popular)
+
+Q26  compare_audiences GET /v2/analysis/compare  a=<Big Thief>, b=<Julia Jacklin>
+     → shared taste tags: Straightforward, Melodic, Folk, Simple Chord Progressions, Post Punk, Alternative Rock
 ```
 
-A 5-stop tour makes roughly 25 Qloo requests. Emerging-act heatmaps with several proxy artists use `qloo api insights` with the documented heatmap parameters, because `where_popular` takes a single entity.
+The other three presets, all captured live the same day: **Mark Normand** (stand-up; fan hotspots with comedy rooms in Austin 92 (The Creek & The Cave, The Velveeta Room), Denver 86 (Comedy Works), Providence 85 and Burlington 84 (Vermont Comedy Club); openers Joe DeRosa, Annie Lederman, Gary Gulman, Dan Soder), **Night Swim**, an emerging act planned from fans of Mitski and Men I Trust (London 75, Oxford 73, Manchester 73 with Band on the Wall), and **Taylor Swift** as an arena-scale test (Charleston 76, Orlando 74, Jacksonville, Pittsburgh and Boston 73), which shows where the fans are and says plainly that the suggested rooms are clubs and theatres, not arenas. Presets use public names and aggregate data only and are labelled "Demo, not affiliated with or endorsed by" the act.
 
-> **TODO (once the event key arrives):** add a short excerpt of a live result (top cities with scores, one stop's cluster, rooms and opener) next to these requests. `npm run qloo:verify-tour` saves raw responses for this.
+**What the hackathon API does not support, and what Tour Scout does instead** (verified in the M0 spike; recorded responses are in `tests/fixtures/`):
+
+| Tried | Result | Instead |
+| --- | --- | --- |
+| `recommend`/`rank` with a `locality` target | Rejected by the harness (`TOOL_INPUT`) | Country-wide `where_popular` hotspots → touring cities → room affinity |
+| Raw `urn:entity:locality` insights via `qloo api` | Popularity-ordered states and cities with no affinity for the signal | (same) |
+| `output.heatmap.boundary=city` | HTTP 400 | Hotspot cells snapped to a list of touring cities (`src/lib/markets.ts`) |
+| Heatmaps through `qloo api insights` | The CLI prints only `results.entities`, so heatmap cells are dropped | One `where_popular` per proxy artist, merged per cell |
+| `entity_tags` as the fan fingerprint | Mixed with place, business and identity tags | Only Qloo theme, style, audience, category and music tag families are shown; identity terms are never shown |
 
 ## Responsible data handling
 
 Built to the kit's [safe-use rules](https://github.com/qloo/qloo-hackathon-kit/blob/main/docs/SAFE_USE.md):
 
 - **Aggregate only.** No personal data is sent to Qloo. Inputs are an act's name, a region or cities, a stop count and an optional room size. Demographics are shown as relative over- or under-indexing for the audience as a whole, labelled "not a headcount, and not about any one fan".
-- **Affinity is not a forecast.** Scores (0–100) rank places against each other; a tap-to-open explainer and the CSV header say so. Pitches never promise turnout.
-- **A deterministic guard** (`src/lib/guard.ts`) withholds any model text that mentions income, wealth or class, sensitive traits, certainty or causation, attendance or ticket forecasts, or individual fans. The plan says how many statements were withheld and why.
+- **Affinity is not a forecast.** Room affinity (0–100) ranks cities against each other; a tap-to-open explainer and the CSV header say so. Pitches never promise turnout.
+- **No identity tags.** Qloo's tag results for an act can include ethnicity or sexuality tags; Tour Scout shows only taste families (themes, styles, music genres) and drops identity terms, so fans are never described by sensitive traits.
+- **Thin data is labelled.** When hotspots fall mostly outside touring cities, when cities had to be added from room affinity, or when Qloo returns few taste tags (common for comedians), the plan shows a "Limited data" note instead of padding.
+- **A deterministic guard** (`src/lib/guard.ts`) withholds any model text that mentions income, wealth or class, sensitive traits, certainty or causation, attendance or ticket forecasts, individual fans, claims that a room fits the capacity (Qloo has no capacity data), targeting of an age or gender group, or affinity presented as "confirmed" demand. The plan says how many statements were withheld and why (the Night Swim preset shows one). Room sizes are the user's own input: any room-size range the user did not give is withheld, and a withheld summary falls back to a templated one.
 - **Provenance is never overstated.** Text from code is labelled TEMPLATE, never AI. Citations to Q-ids that don't exist are dropped, and the text is then labelled GENERAL.
 - **Server-owned plans.** Share links serve only plans this server generated; a client cannot upload a plan.
 - **Credentials stay server-side.** Keys are read from the server environment and never reach the browser, the model or the logs. `npm run qloo:key` stores the Qloo key with hidden input.
@@ -110,7 +139,8 @@ Built to the kit's [safe-use rules](https://github.com/qloo/qloo-hackathon-kit/b
 | --- | --- |
 | No Qloo credential | Demo mode with sample data, labelled "SAMPLE" everywhere and with a banner |
 | Credential set but harness missing or broken | Clear "Qloo connection isn't set up" error, never silent sample data |
-| Qloo rejects the key, or rate-limits | The run stops with a named error; demo tours stay available |
+| Qloo rejects the key | The run stops with a named error; demo tours stay available |
+| Qloo rate-limits (seen in testing during back-to-back tours) | The harness retries 429s itself (3 attempts, honouring Retry-After); Tour Scout then waits ~8 s and retries once; if still limited, the run stops with a named error and demo tours stay available |
 | One Qloo call fails or times out (45 s) | That step is marked failed; the rest of the plan continues |
 | Model unavailable, over quota or over the daily cap | Text falls back to templates (labelled), and the scout falls back to a templated scout (labelled) |
 | Same tour requested again within 24 h | The stored plan replays instantly at no quota cost |
@@ -119,12 +149,14 @@ Built to the kit's [safe-use rules](https://github.com/qloo/qloo-hackathon-kit/b
 | OpenStreetMap naming unavailable | Neighbourhoods show as "one part of the city"; nothing else breaks |
 | Unknown share link | Branded 404 page |
 
-Model spend is bounded by `LLM_DAILY_CAP` (default 40 calls a day), and every call logs its token counts (counts only). Measured on Claude Haiku 4.5 with sample data:
+Model spend is bounded by `LLM_DAILY_CAP` (default 40 calls a day), and every call logs its token counts (counts only). Measured on Claude Haiku 4.5 with live Qloo data (6 Oct 2026):
 
 | Operation | Model calls | Tokens (input + output) | Cost |
 | --- | --- | --- | --- |
-| One tour's text | 1 | ≈ 2.1k + 1.7k | ≈ $0.01 |
-| One scout question | 3–4 | ≈ 5.5–8.3k + 0.5k | ≈ $0.01 |
+| One tour's text | 1 | ≈ 2.4–2.8k + 1.4–2.3k | ≈ $0.01 |
+| One scout question | 2–4 | ≈ 3.7k + 0.4k (2 calls) | < $0.01 |
+
+Latency on the event API: a Qloo call takes about 2.6 s median (including ~0.5 s harness start), with occasional 6–9 s calls; a live tour's Qloo phase takes 25–40 s and the streamed text another 15–20 s. Tickets appear as each stop's data lands, so the screen fills well before the end.
 
 ## Setup from a clean environment
 
@@ -142,7 +174,7 @@ cp .env.example .env.local            # set CLAUDE_API_KEY (and LLM_PROVIDER=cla
 # 3. Qloo credential (input is hidden; never pass the key as an argument)
 npm run qloo:key                      # or: qloo setup --qloo
 
-# 4. One small live check of the workflows Tour Scout uses (~16 requests)
+# 4. One small live check of the workflows Tour Scout uses (~25 requests; cached on disk for 24 h)
 npm run qloo:verify-tour
 
 # 5. Run
@@ -167,11 +199,16 @@ docker run -p 8080:8080 -v tour-scout-data:/data -e QLOO_API_KEY -e CLAUDE_API_K
 | `LLM_DAILY_CAP` | `40` | Model calls per UTC day |
 | `TOUR_RUNS_PER_HOUR`, `RESOLVES_PER_HOUR`, `FOLLOWUPS_PER_HOUR`, `TOUR_DAILY_CAP` | `4`, `40`, `15`, `150` | Quota protection |
 | `DATA_DIR` | `.cache` (`/data` in Docker) | Share links, LLM budget counter, geocoding cache |
-| `QLOO_CONCURRENCY` | `4` | Parallel harness processes |
+| `QLOO_CONCURRENCY` | `3` | Parallel harness processes (4 hit the event rate limit in testing) |
+| `QLOO_CACHE_DIR`, `QLOO_CACHE_TTL_H` | — / `24` | Optional on-disk cache of Qloo responses for scripts and development |
 
-**Demo presets** are captured runs in `public/presets/`. Recapture them with `npm run presets:capture`; a live capture costs about 25 Qloo requests and one model call per preset.
+**Hosting:** a Docker web service on Render (`render.yaml`); the exact steps, costs and caps are in [`docs/DEPLOY.md`](docs/DEPLOY.md). Nothing is deployed yet.
 
-**Checks:** `npm test` (25 tests: guard, pipeline, routing, scout agent, apply, store, CSV, limits), `npm run lint`, `npx tsc --noEmit`.
+**Demo video:** `scripts/video/make-draft.sh <out_dir>` builds a captioned draft (Kokoro voice, scripted Playwright takes, ffmpeg) from `video/scenes.json`. It makes one live tour and one scout question; everything else replays that run.
+
+**Demo presets** are captured live runs in `public/presets/`. Recapture them with `LLM_PROVIDER=claude npm run presets:capture [slug…]`; a live capture costs 21–29 Qloo requests and one model call per preset.
+
+**Checks:** `npm test` (33 tests: guard, pipeline, routing, scout agent, apply, store, CSV, limits, and adapter tests against recorded live Qloo responses in `tests/fixtures/`), `npm run lint`, `npx tsc --noEmit`, `npm run build`.
 
 ## Screens
 
@@ -179,11 +216,16 @@ docker run -p 8080:8080 -v tour-scout-data:/data -e QLOO_API_KEY -e CLAUDE_API_K
 | --- | --- | --- |
 | ![](docs/screenshots/mobile-route.png) | ![](docs/screenshots/mobile-ticket.png) | ![](docs/screenshots/landing.png) |
 
+| Stand-up comedian (US) | Emerging act from "sounds like" artists | Arena-scale test |
+| --- | --- | --- |
+| ![](docs/screenshots/route-comedian.png) | ![](docs/screenshots/route-emerging.png) | ![](docs/screenshots/route-arena.png) |
+
 ## Project layout
 
 | Path | What it does |
 | --- | --- |
 | `src/lib/qloo.ts`, `qloo-mock.ts` | Qloo client over the harness CLI: adapters, cache, concurrency, errors; labelled sample data |
+| `src/lib/tour/cities.ts`, `src/lib/markets.ts` | Fan hotspots → touring cities → room affinity |
 | `src/lib/tour/pipeline.ts` | Phase A: the per-stop scouting pipeline and evidence recording |
 | `src/lib/tour/plan.ts` | Full run, route ordering, plan assembly with the guard |
 | `src/lib/tour/scout.ts`, `apply.ts` | The tool-using scout agent and applying its proposals |
@@ -199,10 +241,15 @@ docker run -p 8080:8080 -v tour-scout-data:/data -e QLOO_API_KEY -e CLAUDE_API_K
 What a plan does **not** establish:
 
 - **Fan affinity is not ticket demand.** It ignores dates, routing costs, competing shows, venue availability, capacity and price. Confirm all of these with bookers.
-- **Scores rank places against each other.** They are not percentages of people and not predictions about any individual.
+- **Scores rank places against each other.** They are not percentages of people and not predictions about any individual. A city's score is its best room's affinity, so a city with one excellent room can outrank a bigger city.
+- **Touring cities are a fixed list.** Hotspots are snapped to about 100 touring cities in the US, India, the UK, Canada and Australia. Hotspots far from all of them (national parks, resort areas, Ladakh) are counted but not scheduled; other countries rely on room affinity alone.
+- **Qloo's venue tag is broad.** "Live music venue" includes some galleries, bars and halls, and occasionally an odd one (a heritage railway in the Hudson Valley). Every room is a suggestion to check.
+- **Taste tags vary by act.** Qloo returns few usable taste tags for some acts (some comedians, and even Taylor Swift); the fan profile says "Limited data" rather than padding it.
+- **Coverage outside the US and UK is thinner.** For India, most hotspots fell outside touring cities (tested in M0), so cities are added from room affinity and the plan says "Limited data".
+- **Openers are suggestions.** They are similar acts with local affinity, not checked for availability or willingness.
 - **Qloo has no venue capacity.** Your room size is used only as text in the pitch, labelled as your target.
 - **Neighbourhood names are approximate.** They come from reverse-geocoding the centre of the strongest Qloo map cell, so a cell can straddle areas.
-- **Coverage varies by country and by act.** Small or very new acts may need emerging-act mode. Arena-scale acts still get a plan, but venue suggestions may skew large.
+- **Coverage varies by country and by act.** Small or very new acts may need emerging-act mode. Arena-scale acts (Qloo popularity ≥ 0.999, e.g. Taylor Swift) still get a plan of where their fans are, but the suggested rooms are clubs and theatres, not arenas, and the plan says so.
 - **New stops get templated text.** Stops added through "Apply" have no model-written text, to keep model spend bounded.
 - **The guard is keyword-based.** It catches the known failure modes but is not exhaustive; provenance labels remain the main safeguard.
 - **Map tiles come from OpenStreetMap's standard tile server**, which suits light demo traffic only. Heavy use would need a tile provider.

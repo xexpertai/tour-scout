@@ -19,8 +19,12 @@ export type SynthesisInput = {
   artist: { name: string; arenaScale: boolean; proxyOf?: string[] };
   capacity?: [number, number];
   fan: { tags: string[]; tagsEvidence?: string; demographics?: string; demographicsEvidence?: string; alsoLikes: { domain: string; items: string[]; evidence: string }[] };
-  /** affinity is Qloo's score scaled to 0–100, the same scale the UI shows. */
-  stops: { stop_id: string; city: string; affinity: number; evidence: string; cluster?: string; clusterEvidence?: string; venues: string[]; venuesEvidence?: string; opener?: string; openerEvidence?: string; shared?: string[]; sharedEvidence?: string }[];
+  /**
+   * affinity is the city's best room affinity: Qloo's score (scaled to 0–100, as the UI shows) for
+   * the audience and the city's best-matching live room. fanHotspot marks cities near a cell of the
+   * country-wide fan heatmap.
+   */
+  stops: { stop_id: string; city: string; affinity: number; evidence: string; fanHotspot?: boolean; hotspotEvidence?: string; cluster?: string; clusterEvidence?: string; venues: string[]; venuesEvidence?: string; opener?: string; openerEvidence?: string; shared?: string[]; sharedEvidence?: string }[];
 };
 
 type RawInsight = { text: string; evidence: string[] };
@@ -54,12 +58,20 @@ Rules:
 - Qloo values are aggregate taste affinity. Never present them as attendance, ticket sales, a certainty, a cause, or a prediction about any individual. Never forecast turnout or sell-outs.
 - Never state or imply income, wealth, class, or sensitive traits (religion, caste, ethnicity, health, politics) of fans or places.
 - Every item cites the evidence ids (Q1, Q2, …) it relies on. Use an empty list only for general touring advice no data supports.
-- Capacity, if given, is the artist's own target and is not Qloo data; say so if you mention it.
+- If capacity is not in the data, never mention a room size, capacity or headcount number at all.
+- Capacity, if given, is the artist's own target and is not Qloo data. Mention it at most once per pitch, exactly as: "We're looking at rooms of A–B (our own target)." Qloo has no venue capacity: never link the capacity to a venue, neighbourhood or programme, and never say anything fits, matches, suits or supports it.
+- Openers are suggestions from Qloo data, not bookings: write "a suggested opener" or "we'd like to approach X to open"; never "partnered with", "joins" or "opens" as if confirmed.
 - Refer to the artist by name or as "they"; never assume gender, age or identity.
 - Describe audience overlap as shared tastes, naming the shared items; never quantify it ("significantly", "most fans") unless a number is provided.
 - Describe the audience only through the provided tags and affinities; do not invent traits (e.g. "collectors", "students").
-- If the act is arena-scale, say the plan still works but venue suggestions may skew large.
-- Affinity and scores are on a 0–100 scale; quote them exactly as given. Demographic values are relative over/under-index scores, not percentages.
+- If the act is arena-scale, say the plan shows where the fans are, but the suggested rooms are clubs and theatres this audience favours, not arena-sized venues.
+- A stop's affinity (0–100) is its best room affinity: how strongly the act's audience lines up with the city's best-matching live room. Quote it exactly as given and call it room affinity. fanHotspot: true means Qloo's country-wide heatmap puts a fan hotspot near that city (cite hotspotEvidence); say "near a Qloo fan hotspot", never "confirmed".
+- Demographic values are relative over/under-index scores, not percentages.
+- Mention demographics only as Qloo's aggregate index with the exact bucket and value, e.g. "ages 45–54 over-index (+0.53)". Never characterise the audience by gender or age ("skews male", "older crowd", "mostly women").
+- Demographics describe the whole audience nationally, in aggregate; they are not per city. Never attribute them to a city, never say a group "dominates", and never recommend targeting, excluding, framing for or marketing to an age or gender group.
+- If artist.proxyOf is set, the act is new and has no Qloo data of its own: describe the audience as "fans of <proxyOf names>", never as the act's own fans or tags. In that case a stop's "opener" is an established act the new act could pitch to open for (a support slot), not an act opening for them.
+- Never call anything "confirmed"; Qloo shows taste affinity, not confirmed demand.
+- Risks are about touring and the limits of this data (affinity is not demand, rooms unconfirmed, routing, dates, competing shows); never about an audience group.
 Write, in this order: a summary (at most 2 sentences); for each stop a "why" (at most 40 words) and a pitch email to the venue booker (a subject line, then at most 90 words, grounded in the stop's data and the fan profile); exactly 3 show-theme ideas; exactly 3 merch ideas; 3 risks. Keep every item short.`;
 
 const insight = { type: "object", properties: { text: { type: "string" }, evidence: { type: "array", items: { type: "string" } } }, required: ["text", "evidence"] };
@@ -105,10 +117,34 @@ const geminiProvider: SynthesisProvider = {
   },
 };
 
+/**
+ * With eager input streaming the API does not validate tool input, and Haiku occasionally returns a
+ * degenerate payload (e.g. `summary: {text: "text"}` and no stop text). A usable plan has a real
+ * summary and why + pitch text for at least half the stops.
+ */
+export function usableSynthesis(raw: RawSynthesis, stopIds: string[]): boolean {
+  const real = (i?: RawInsight) => typeof i?.text === "string" && i.text.trim().length >= 25;
+  const stops = Array.isArray(raw.stops) ? raw.stops : [];
+  const written = stopIds.filter((id) => stops.some((s) => String(s?.stop_id) === id && real(s.why) && real(s.pitch))).length;
+  return real(raw.summary) && written * 2 >= stopIds.length;
+}
+
 // ---------------------------------------------------------------- Claude (Messages API)
 const claudeProvider: SynthesisProvider = {
   name: "claude",
   async synthesize(input, onPartial) {
+    const ids = input.stops.map((s) => s.stop_id);
+    const first = await claudeOnce(input, onPartial);
+    if (usableSynthesis(first, ids)) return first;
+    console.warn(JSON.stringify({ event: "llm_bad_output", provider: "claude", model: CLAUDE_MODEL, retry: true }));
+    const second = await claudeOnce(input, onPartial);
+    if (usableSynthesis(second, ids)) return second;
+    throw new LlmError("Claude returned an incomplete tour plan twice", "LLM_BAD_OUTPUT");
+  },
+};
+
+async function claudeOnce(input: SynthesisInput, onPartial?: PartialHandler): Promise<RawSynthesis> {
+  {
     // The key is deliberately not ANTHROPIC_API_KEY, so no other tool picks it up; pass it explicitly.
     const apiKey = process.env.CLAUDE_API_KEY;
     if (!apiKey) throw new LlmError("CLAUDE_API_KEY is not set", "LLM_CONFIG");
@@ -137,14 +173,17 @@ const claudeProvider: SynthesisProvider = {
       if (!block || typeof block.input !== "object" || block.input === null) throw new LlmError("Claude returned no tour plan", "LLM_BAD_OUTPUT");
       return block.input as RawSynthesis;
     } catch (e) {
+      // Status and error type only: never prompt, output or credentials.
+      console.warn(JSON.stringify({ event: "llm_error", provider: "claude", model: CLAUDE_MODEL, status: (e as { status?: number }).status, type: (e as Error).name, message: e instanceof LlmError ? e.message : undefined }));
+      if (e instanceof LlmError) throw e;
       if (e instanceof Anthropic.RateLimitError) throw new LlmError("The AI model's rate limit is reached.", "LLM_QUOTA");
       if (e instanceof Anthropic.AuthenticationError || e instanceof Anthropic.PermissionDeniedError) throw new LlmError("The Claude API key is missing or invalid.", "LLM_CONFIG");
       if (e instanceof Anthropic.BadRequestError) throw new LlmError(`Claude rejected the request: ${e.message}`, "LLM_CONFIG");
       if (e instanceof Anthropic.APIError) throw new LlmError("The AI model is busy right now.", "LLM_UNAVAILABLE");
       throw e;
     }
-  },
-};
+  }
+}
 
 // ---------------------------------------------------------------- scripted (no model)
 const clean = (s: string) => s.replace(/\s*\(sample\)$/, "");
@@ -157,14 +196,14 @@ export const scriptedProvider: SynthesisProvider = {
     const allStops = input.stops.map((s) => s.evidence);
     return {
       summary: {
-        text: `Qloo ranks ${input.stops.map((s) => clean(s.city)).join(", ")} highest for ${possessive(name)} fan affinity. ${input.artist.arenaScale ? "This is an arena-scale act: the plan still works, but venue suggestions may skew large." : "Each stop below targets the neighbourhood where that affinity concentrates."}`,
+        text: `Qloo ranks ${input.stops.map((s) => clean(s.city)).join(", ")} highest for ${possessive(name)} fan affinity. ${input.artist.arenaScale ? "This is an arena-scale act: the plan shows where the fans are, but the suggested rooms are clubs and theatres, not arenas." : "Each stop below targets the neighbourhood where that affinity concentrates."}`,
         evidence: [...new Set(allStops)],
       },
       stops: input.stops.map((s) => ({
         stop_id: s.stop_id,
         why: {
-          text: `${clean(s.city)} scores ${s.affinity} out of 100 on Qloo fan affinity${s.cluster ? `, concentrated around ${clean(s.cluster)}` : ""}.`,
-          evidence: [s.evidence, s.clusterEvidence].filter((x): x is string => Boolean(x)),
+          text: `${clean(s.city)} scores ${s.affinity} out of 100 on Qloo room affinity${s.fanHotspot ? " and sits near a Qloo fan hotspot" : ""}${s.cluster ? `; fans in the city concentrate around ${clean(s.cluster)}` : ""}.`,
+          evidence: [s.evidence, s.hotspotEvidence, s.clusterEvidence].filter((x): x is string => Boolean(x)),
         },
         pitch: {
           text: `Subject: ${name}, ${clean(s.city)} date\n\nHi, I'm booking ${name} and would love to bring the show to your room. Qloo's taste data shows ${clean(s.city)} among the strongest cities for ${possessive(name)} audience${s.cluster ? `, with affinity concentrated around ${clean(s.cluster)}` : ""}.${s.opener ? ` We'd pair it with ${clean(s.opener)}, whose audience shares tastes with ours${s.shared?.length ? ` (${s.shared.slice(0, 2).map(clean).join(", ")})` : ""}.` : ""}${input.capacity ? ` We're targeting rooms of ${input.capacity[0]}–${input.capacity[1]} (our own target, not Qloo data).` : ""} Happy to share the full data behind this.`,

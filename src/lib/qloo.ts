@@ -2,25 +2,34 @@
 /**
  * Qloo client built on the official @qloo/qloo-harness CLI, the event's supported surface.
  *
- * - Validated workflows (find_tags, describe, entity_tags, recommend, rank, where_popular,
- *   audience_demographics, compare_audiences) run through `qloo exec <workflow>`, which returns the
- *   harness's normalized envelope and request provenance.
- * - Signal heatmaps with tags or several entities have no workflow (where_popular takes one entity),
- *   so they run through `qloo api insights` with the documented heatmap parameters.
+ * Every call runs a validated workflow (find_tags, describe, entity_tags, recommend, where_popular,
+ * audience_demographics, compare_audiences) through `qloo exec <workflow>`, which returns the
+ * harness's normalized envelope and request provenance.
+ *
+ * Verified against the hackathon API (M0, 6 Oct 2026):
+ * - `recommend`/`rank` accept no `locality` target, so cities come from a country-wide
+ *   `where_popular` heatmap (see tour/cities.ts), not from locality recommendations.
+ * - `qloo api insights` prints only `results.entities`, so heatmaps cannot go through it; several
+ *   signals (emerging-act mode) use one `where_popular` per signal, merged per map cell.
+ * - Place results carry `properties.geocode` (city, neighbourhood) and an address but no coordinates.
  *
  * The credential never passes through this module: the harness reads QLOO_API_KEY from the server
  * environment or from its private config written by `qloo setup --qloo`.
  * Without a usable credential the client runs in mock mode with clearly labelled sample data.
  */
 import { spawn } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import geohash from "ngeohash";
 import { mock } from "./qloo-mock.ts";
 
 export const QLOO_BASE_URL = process.env.QLOO_BASE_URL?.trim() || "https://hackathon.api.qloo.com";
 const QLOO_BIN = process.env.QLOO_BIN?.trim() || "qloo";
 const TIMEOUT_MS = 45_000;
-const MAX_CONCURRENT = Math.max(1, Number(process.env.QLOO_CONCURRENCY) || 4);
+// 3 parallel harness processes: at 4 the event key hit 429s during back-to-back tours (M0).
+const MAX_CONCURRENT = Math.max(1, Number(process.env.QLOO_CONCURRENCY) || 3);
+/** After the harness's own 429 retries (3 attempts, Retry-After up to 30 s), wait this long and retry once. */
+const RATE_LIMIT_RETRY_MS = Number(process.env.QLOO_RATE_LIMIT_RETRY_MS ?? 8000);
 const CACHE_TTL_MS = 60 * 60 * 1000;
 
 export type QlooRequest = { method: string; path: string; query: Record<string, unknown> };
@@ -41,6 +50,8 @@ export type AreaScore = { geohash: string; lat: number; lng: number; affinity: n
 export type QEntity = {
   id: string; name: string; type?: string; affinity?: number; popularity?: number;
   address?: string; lat?: number; lng?: number; rating?: number; description?: string;
+  /** Places only: Qloo's geocode labels (no coordinates on the hackathon API). */
+  city?: string; area?: string;
 };
 export type Venue = QEntity;
 export type Entity = QEntity;
@@ -141,19 +152,52 @@ function dumpRaw(args: string[], stdin: string | undefined, out: string) {
 }
 
 const cache = new Map<string, { at: number; value: unknown }>();
+/**
+ * Optional on-disk cache for scripts (verification, preset capture) so repeated runs during
+ * development do not spend event quota. Enabled only when QLOO_CACHE_DIR is set; entries expire
+ * after QLOO_CACHE_TTL_H hours (default 24). Stores Qloo responses only, never credentials.
+ */
+const DISK_DIR = process.env.QLOO_CACHE_DIR?.trim();
+const DISK_TTL_MS = (Number(process.env.QLOO_CACHE_TTL_H) || 24) * 3600_000;
+const diskPath = (key: string) => `${DISK_DIR}/${createHash("sha1").update(key).digest("hex")}.json`;
+function diskGet(key: string): { at: number; value: unknown } | undefined {
+  if (!DISK_DIR) return undefined;
+  try {
+    const hit = JSON.parse(readFileSync(/*turbopackIgnore: true*/ diskPath(key), "utf8"));
+    return Date.now() - hit.at < DISK_TTL_MS ? hit : undefined;
+  } catch {
+    return undefined;
+  }
+}
+function diskSet(key: string, entry: { at: number; value: unknown }) {
+  if (!DISK_DIR) return;
+  try {
+    mkdirSync(/*turbopackIgnore: true*/ DISK_DIR, { recursive: true });
+    writeFileSync(/*turbopackIgnore: true*/ diskPath(key), JSON.stringify(entry));
+  } catch {
+    // An optimisation only.
+  }
+}
 async function cached<T>(key: string, fn: () => Promise<T>): Promise<{ value: T; ms: number; cached: boolean }> {
-  const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return { value: hit.value as T, ms: 0, cached: true };
+  const hit = cache.get(key) ?? diskGet(key);
+  if (hit && Date.now() - hit.at < Math.max(CACHE_TTL_MS, DISK_DIR ? DISK_TTL_MS : 0)) return { value: hit.value as T, ms: 0, cached: true };
   const started = Date.now();
   const value = await fn();
-  cache.set(key, { at: Date.now(), value });
+  const entry = { at: Date.now(), value };
+  cache.set(key, entry);
+  diskSet(key, entry);
   return { value, ms: Date.now() - started, cached: false };
 }
 
 /** Runs one validated workflow through `qloo exec`; returns the harness envelope and timing. */
 async function execWorkflow(operation: string, input: Record<string, unknown>) {
   return cached(`exec:${operation}:${JSON.stringify(input)}`, async () => {
-    const envelope = JSON.parse(await run(["exec", operation], JSON.stringify(input)));
+    let envelope = JSON.parse(await run(["exec", operation], JSON.stringify(input)));
+    // The harness's recovery advice for a rate limit is to wait for the window and retry once.
+    if (envelope.error?.code === "QLOO_RATE_LIMIT" && RATE_LIMIT_RETRY_MS > 0) {
+      await new Promise((r) => setTimeout(r, RATE_LIMIT_RETRY_MS * (0.75 + Math.random() / 2)));
+      envelope = JSON.parse(await run(["exec", operation], JSON.stringify(input)));
+    }
     if (envelope.error && !envelope.status) {
       const { code = "QLOO_ERROR", retryable = false, recovery } = envelope.error;
       throw new QlooError(`Qloo ${operation} failed (${code})`, code, retryable, recovery);
@@ -197,6 +241,7 @@ function toEntity(e: any): QEntity {
     address: typeof props.address === "string" ? props.address : undefined,
     lat: num(geo.latitude) ?? num(geo.lat), lng: num(geo.longitude) ?? num(geo.lon) ?? num(geo.lng),
     rating: num(props.business_rating),
+    city: typeof geo.city === "string" ? geo.city : undefined, area: typeof geo.name === "string" ? geo.name : undefined,
     description: typeof props.short_description === "string" ? props.short_description : typeof props.description === "string" ? props.description : undefined,
   };
 }
@@ -233,11 +278,30 @@ export async function describeEntity(name: string, type?: "artist" | "person" | 
   return { status: "resolved", entity: toEntity(first), call: callFrom("describe", r, 1) };
 }
 
-/** entity_tags: the tags most associated with the audience of the given entities. */
+/**
+ * Which tags may describe an audience. entity_tags has no tag-type filter and, for an act, returns a
+ * mix of place/business tags (payment cards, hotel stars, dishes), media keywords, and identity tags
+ * (ethnicity, sexuality). Only taste families are kept: Qloo's theme, artist, style, audience and
+ * category tags, and any music tag family. Identity terms are dropped even inside those families,
+ * so the app never describes fans by sensitive traits (SAFE_USE).
+ */
+const TASTE_TAG_TYPE = /^urn:tag:(theme|artist|style|audience|category):qloo$|^urn:tag:[a-z_]+:music$/;
+const SENSITIVE_TERM = /\b(ethnic\w*|african|black|white|asian|latin[ao]?|hispanic|indigenous|lesbian|gay|queer|lgbt\w*|trans\w*|religio\w*|muslim|hindu|christian|jewish|sikh|caste|politic\w*|conservative|liberal|disab\w*|health|income|wealth\w*|affluent|low.income)\b/i;
+export const isAudienceTag = (t: { id?: string; type?: string; name?: string }) => {
+  const type = t.type ?? t.id?.split(":").slice(0, 4).join(":") ?? "";
+  return TASTE_TAG_TYPE.test(type) && !SENSITIVE_TERM.test(t.name ?? "");
+};
+
+/** entity_tags: the tags most associated with the audience of the given entities (taste tags only). */
 export async function entityTags(entityIds: string[], limit = 10): Promise<{ tags: Tag[]; call: QlooCall }> {
   if (await isMock()) return mock.entityTags(entityIds);
-  const r = await execWorkflow("entity_tags", { entities: entityIds, limit });
-  const tags: Tag[] = (r.value.results ?? []).filter((t: any) => t?.id).map((t: any) => ({ id: t.id, name: t.name, type: t.type, affinity: num(t.affinity) }));
+  // Ask for the maximum and filter, since place and business tags crowd the top of the list.
+  const r = await execWorkflow("entity_tags", { entities: entityIds, limit: 20 });
+  const seen = new Set<string>();
+  const tags: Tag[] = (r.value.results ?? []).filter((t: any) => t?.id && typeof t.name === "string" && t.name.trim() && isAudienceTag(t))
+    .map((t: any) => ({ id: t.id, name: t.name.trim(), type: t.type, affinity: num(t.affinity) }))
+    // Different tag families can carry the same name ("Smooth" as style and as artist trait).
+    .filter((t: Tag) => !seen.has(t.name.toLowerCase()) && Boolean(seen.add(t.name.toLowerCase()))).slice(0, limit);
   return { tags, call: callFrom("entity_tags", r, tags.length) };
 }
 
@@ -249,6 +313,8 @@ export async function recommend(p: {
   signalLocation?: string;
   filterLocation?: string;
   includeTags?: string[];
+  /** How several include_tags combine; Qloo's default is intersection. */
+  includeTagsOperator?: "union" | "intersection";
   demographic?: string;
   limit?: number;
 }): Promise<{ entities: QEntity[]; call: QlooCall }> {
@@ -263,22 +329,11 @@ export async function recommend(p: {
   if (p.signalLocation) input.signal_location = p.signalLocation;
   if (p.filterLocation) input.filter_location = p.filterLocation;
   if (p.includeTags?.length) input.include_tags = p.includeTags;
+  if (p.includeTags?.length && p.includeTagsOperator) input.include_tags_operator = p.includeTagsOperator;
   if (p.demographic) input.demographic = p.demographic;
   const r = await execWorkflow("recommend", input);
   const entities = (r.value.results ?? []).filter((e: any) => e?.entity_id).map(toEntity);
   return { entities, call: callFrom("recommend", r, entities.length) };
-}
-
-/** rank: order a user-supplied shortlist (e.g. candidate cities) by affinity for the signals. */
-export async function rankOptions(p: { options: string[]; optionType: InsightsType; signals: string[] }): Promise<{ entities: QEntity[]; call: QlooCall }> {
-  if (await isMock()) return mock.rank(p);
-  const r = await execWorkflow("rank", { options: p.options, option_type: p.optionType, signals: p.signals });
-  if (r.value.status === "needs_input") {
-    const names = (r.value.resolution?.issues ?? []).map((i: any) => i.input).join(", ");
-    throw new QlooError(`Qloo could not resolve: ${names}`, "QLOO_NEEDS_INPUT");
-  }
-  const entities = (r.value.results ?? []).filter((e: any) => e?.entity_id).map(toEntity);
-  return { entities, call: callFrom("rank", r, entities.length) };
 }
 
 /** where_popular: where the audience of one entity is concentrated within a location. */
@@ -287,6 +342,31 @@ export async function wherePopular(entityId: string, within: string, limit = 15)
   const r = await execWorkflow("where_popular", { entity: entityId, within, limit });
   const cells = (r.value.results ?? []).map(toAreaScore).filter(Boolean) as AreaScore[];
   return { cells, call: callFrom("where_popular", r, cells.length) };
+}
+
+/**
+ * Where the audience of one or more entities concentrates. where_popular takes one entity, so
+ * several signals (emerging-act proxies, at most 3) run one call each and are merged per map cell,
+ * keeping each cell's strongest affinity. The merged call lists every request.
+ */
+export async function fanHeatmap(entityIds: string[], within: string, limit = 15): Promise<{ cells: AreaScore[]; call: QlooCall }> {
+  const ids = entityIds.slice(0, 3);
+  if (ids.length <= 1) return wherePopular(ids[0], within, limit);
+  const runs = await Promise.all(ids.map((id) => wherePopular(id, within, limit)));
+  const merged = new Map<string, AreaScore>();
+  for (const cell of runs.flatMap((x) => x.cells)) {
+    const known = merged.get(cell.geohash);
+    if (!known || cell.affinity > known.affinity) merged.set(cell.geohash, cell);
+  }
+  const cells = [...merged.values()].sort((a, b) => b.affinity - a.affinity).slice(0, limit);
+  return {
+    cells,
+    call: {
+      workflow: `where_popular ×${runs.length}`, surface: runs[0].call.surface, status: cells.length ? "ok" : "empty",
+      summary: `Merged heatmaps of ${runs.length} signals`, requests: runs.flatMap((x) => x.call.requests), resultCount: cells.length,
+      ms: Math.max(...runs.map((x) => x.call.ms ?? 0)), cached: runs.every((x) => x.call.cached),
+    },
+  };
 }
 
 /** audience_demographics: aggregate age/gender affinity of one entity's audience. */
@@ -300,43 +380,15 @@ export async function audienceDemographics(entityId: string): Promise<{ demograp
 }
 
 /**
- * compare_audiences: how two audiences' tastes overlap. The response shape is verified in M0;
- * until then the adapter collects named items from the result tolerantly.
+ * compare_audiences: the taste tags two audiences share (verified shape: `results.tags[]` with a
+ * `query.score` each). Only taste tag families are kept (see isAudienceTag); region tags are dropped.
  */
 export async function compareAudiences(groupA: string[], groupB: string[], limit = 8): Promise<{ shared: string[]; call: QlooCall }> {
   if (await isMock()) return mock.compare();
-  const r = await execWorkflow("compare_audiences", { group_a: groupA, group_b: groupB, limit });
+  const r = await execWorkflow("compare_audiences", { group_a: groupA, group_b: groupB, limit: Math.min(20, limit + 4) });
   const results = r.value.results;
-  const list: any[] = Array.isArray(results) ? results : Object.values(results ?? {}).find(Array.isArray) ?? [];
-  const shared = list.map((x) => x?.name).filter((n): n is string => typeof n === "string").slice(0, limit);
+  const list: any[] = Array.isArray(results?.tags) ? results.tags : Array.isArray(results) ? results : Object.values(results ?? {}).find(Array.isArray) ?? [];
+  const shared = list.filter((x) => typeof x?.name === "string" && isAudienceTag({ id: x.tag_id ?? x.id, type: x.subtype, name: x.name }))
+    .map((x) => x.name as string).slice(0, limit);
   return { shared, call: callFrom("compare_audiences", r, list.length) };
 }
-
-/** Signal heatmap for a location from tags and/or several entities (raw /v2/insights via `qloo api`). */
-export async function signalHeatmap(p: { location: string; tagIds?: string[]; entityIds?: string[]; age?: string }): Promise<{ cells: AreaScore[]; call: QlooCall }> {
-  if (await isMock()) return mock.heatmap(`${p.location}:${(p.entityIds ?? p.tagIds ?? []).join(",")}`, "heatmap");
-  const params: Record<string, string | number> = { "filter.type": "urn:heatmap", "filter.location.query": p.location, take: 50 };
-  if (p.tagIds?.length) params["signal.interests.tags"] = p.tagIds.join(",");
-  if (p.entityIds?.length) params["signal.interests.entities"] = p.entityIds.join(",");
-  if (p.age) params["signal.demographics.age"] = p.age;
-  const r = await cached(`heatmap:${JSON.stringify(params)}`, async () => {
-    // -t is required by the CLI; filter.type in --params overrides it with urn:heatmap.
-    const data = JSON.parse(await run(["api", "insights", "-t", "place", "--params", JSON.stringify(params), "--json"]));
-    if (data.error) {
-      // The legacy CLI reports HTTP failures as API_ERROR with the status in the message.
-      const message = String(data.message ?? data.code ?? "unknown error");
-      const code = /\b40[13]\b/.test(message) ? "QLOO_AUTH" : /\b429\b/.test(message) ? "QLOO_RATE_LIMIT" : data.code ?? "QLOO_ERROR";
-      throw new QlooError(`Qloo heatmap failed: ${message}`, code, /\b(429|5\d\d)\b/.test(message));
-    }
-    return data;
-  });
-  const raw = Array.isArray(r.value.results) ? r.value.results : r.value.results?.heatmap ?? [];
-  const cells = raw.map(toAreaScore).filter(Boolean) as AreaScore[];
-  return {
-    cells,
-    call: { workflow: "heatmap (signals)", surface: "qloo api", status: cells.length ? "ok" : "empty", requests: [{ method: "GET", path: "/v2/insights", query: params }], resultCount: cells.length, ms: r.ms, cached: r.cached },
-  };
-}
-
-/** Tag-signal heatmap of a city (used by the café advisor). */
-export const tasteHeatmap = (city: string, tagIds: string[], age?: string) => signalHeatmap({ location: city, tagIds, age });

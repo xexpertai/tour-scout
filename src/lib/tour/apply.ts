@@ -23,7 +23,9 @@ export async function applyProposal(plan: TourPlan, followUpIndex: number, out: 
   const ledger = new EvidenceLedger(Math.max(0, ...usedIds));
   const step = makeStepper(ledger, out);
   const who = plan.artist.proxyOf?.length ? `artists like ${plan.artist.proxyOf.map(clean).join(", ")}` : plan.artist.name;
-  const ctx = { signals: plan.signals, who, artistType: plan.artist.type, isArtistMode: !plan.artist.proxyOf?.length, venueTag: diff.add.length ? await venueTagFor(plan.artist.type, step) : undefined };
+  const ctx = { signals: plan.signals, who, artistType: plan.artist.type, isArtistMode: !plan.artist.proxyOf?.length, venueTag: diff.add.length ? await venueTagFor(plan.artist.type, step) : undefined,
+    popularity: plan.artist.proxyOf?.length ? undefined : plan.artist.popularity, usedOpeners: new Set(plan.stops.map((s) => s.opener?.entityId).filter((x): x is string => Boolean(x))),
+    names: plan.artist.proxyOf?.length ? plan.artist.proxyOf : [plan.artist.name] };
 
   const kept: TourStop[] = plan.stops.filter((s) => !diff.remove.includes(s.stopId));
   const nextIndex = Math.max(0, ...plan.stops.map((s) => Number(s.stopId.slice(1))));
@@ -35,7 +37,7 @@ export async function applyProposal(plan: TourPlan, followUpIndex: number, out: 
 
   // Templated text for the new stops only (no model call), labelled as template.
   const validIds = new Set([...plan.sources, ...(plan.followUps ?? []).flatMap((f) => f.sources), ...ledger.sources].map((s) => s.id));
-  const { guard } = insightGuard(validIds, true);
+  const { guard } = insightGuard(validIds, true, { capacity: plan.inputs.capacity });
   const fakePhaseA = { fan: plan.fan, cities: [], stops: added, ledger };
   const text = await scriptedProvider.synthesize(synthesisInput({ artist: null, emerging: { name: plan.artist.name, proxies: [] }, stops: added.length, capacity: plan.inputs.capacity }, fakePhaseA, plan.artist.arenaScale));
   const newStops: TourStop[] = added.map((s) => {

@@ -1,0 +1,188 @@
+{
+ "_note": "Recorded from the Qloo hackathon API on 2026-10-06 via qloo exec (harness 0.1.26); execution ids removed, no credentials.",
+ "args": [
+  "exec",
+  "entity_tags"
+ ],
+ "input": {
+  "entities": [
+   "3B124908-B8E6-4CF2-8D3E-2E024CD78BBE"
+  ],
+  "limit": 20
+ },
+ "output": {
+  "schema_version": "1.0-preview.1",
+  "operation": "entity_tags",
+  "status": "ok",
+  "interpretation": {
+   "entities": [
+    {
+     "input": "3B124908-B8E6-4CF2-8D3E-2E024CD78BBE",
+     "entityId": "3B124908-B8E6-4CF2-8D3E-2E024CD78BBE",
+     "name": "Cedric the Entertainer",
+     "type": "urn:entity:person",
+     "match": "identifier"
+    }
+   ]
+  },
+  "results": [
+   {
+    "id": "urn:tag:hotel_rating:place:three_star",
+    "name": "Three Star",
+    "type": "urn:tag:hotel_rating:place",
+    "popularity": 0.9999551521113145,
+    "affinity": 1
+   },
+   {
+    "id": "urn:tag:inclusivity:place:identifies_as_black_owned",
+    "name": "Identifies as Black-owned",
+    "type": "urn:tag:inclusivity:place",
+    "popularity": 0.9999147026145141,
+    "affinity": 1
+   },
+   {
+    "id": "urn:tag:genre:media:african_american",
+    "name": "African American",
+    "type": "urn:tag:genre:media",
+    "popularity": 0.9997073498542168,
+    "affinity": 1
+   },
+   {
+    "id": "urn:tag:specialty_dish:place:shrimp_grits",
+    "name": "Shrimp Grits",
+    "type": "urn:tag:specialty_dish:place",
+    "popularity": 0.9942192563795925,
+    "affinity": 1
+   },
+   {
+    "id": "urn:tag:genre:place:restaurant:american",
+    "name": "American",
+    "type": "urn:tag:genre:place",
+    "popularity": 0.9999273479911838,
+    "affinity": 1
+   },
+   {
+    "id": "urn:tag:cost_description:place:inexpensive",
+    "name": "Inexpensive",
+    "type": "urn:tag:cost_description:place",
+    "popularity": 0.9999875117087548,
+    "affinity": 1
+   },
+   {
+    "id": "urn:tag:keyword:media:african_american",
+    "name": "african american",
+    "type": "urn:tag:keyword:media",
+    "popularity": 0.9980537448955621,
+    "affinity": 1
+   },
+   {
+    "id": "urn:tag:genre:brand:academic",
+    "name": "Academic",
+    "type": "urn:tag:genre:brand",
+    "popularity": 0.9977978194343888,
+    "affinity": 1
+   },
+   {
+    "id": "urn:tag:credit_card:place:discover",
+    "name": "Discover",
+    "type": "urn:tag:credit_card:place",
+    "popularity": 0.9999869619097692,
+    "affinity": 1
+   },
+   {
+    "id": "urn:tag:keyword:qloo:schemes",
+    "name": "Schemes",
+    "type": "urn:tag:keyword:qloo",
+    "popularity": 0.9918631339041706,
+    "affinity": 0.9995785611582131
+   },
+   {
+    "id": "urn:tag:subgenre:qloo:animated",
+    "name": "Animated",
+    "type": "urn:tag:subgenre:qloo",
+    "popularity": 0.9884745638641004,
+    "affinity": 0.9995463763475291
+   },
+   {
+    "id": "urn:tag:ethnicity:qloo:african_american",
+    "name": "African American",
+    "type": "urn:tag:ethnicity:qloo",
+    "popularity": 0.9969125645248017,
+    "affinity": 0.9994859615447181
+   },
+   {
+    "id": "urn:tag:keyword:qloo:ice_age",
+    "name": "Ice Age",
+    "type": "urn:tag:keyword:qloo",
+    "popularity": 0.9914722239911126,
+    "affinity": 0.9994797763038107
+   },
+   {
+    "id": "urn:tag:keyword:media:family_relationships",
+    "name": "family relationships",
+    "type": "urn:tag:keyword:media",
+    "popularity": 0.9990306183333271,
+    "affinity": 0.9993669315609663
+   },
+   {
+    "id": "urn:tag:audience:qloo:child_oriented",
+    "name": "Child-Oriented",
+    "type": "urn:tag:audience:qloo",
+    "popularity": 0.8556060567741283,
+    "affinity": 0.9993114406779661
+   },
+   {
+    "id": "urn:tag:occupation:qloo:stand_up_comedian",
+    "name": "Stand up comedian",
+    "type": "urn:tag:occupation:qloo",
+    "popularity": 0.9793832449230383,
+    "affinity": 0.9992795759790047
+   },
+   {
+    "id": "urn:tag:keyword:qloo:uncensored",
+    "name": "Uncensored",
+    "type": "urn:tag:keyword:qloo",
+    "popularity": 0.960734825016308,
+    "affinity": 0.9992789978069516
+   },
+   {
+    "id": "urn:tag:keyword:media:african_american_protagonist",
+    "name": "african american protagonist",
+    "type": "urn:tag:keyword:media",
+    "popularity": 0.9919155763018156,
+    "affinity": 0.9987829832248449
+   },
+   {
+    "id": "urn:tag:keyword:media:new_york_city",
+    "name": "new york city",
+    "type": "urn:tag:keyword:media",
+    "popularity": 0.9985562286852423,
+    "affinity": 0.9987078363664281
+   },
+   {
+    "id": "urn:tag:keyword:media:female_protagonist",
+    "name": "female protagonist",
+    "type": "urn:tag:keyword:media",
+    "popularity": 0.9984291361399291,
+    "affinity": 0.9985399422010117
+   }
+  ],
+  "result_count": 20,
+  "provenance": {
+   "endpoint": "/v2/insights",
+   "requests": [
+    {
+     "method": "GET",
+     "path": "/v2/insights",
+     "query": {
+      "filter.type": "urn:tag",
+      "signal.interests.entities": [
+       "3B124908-B8E6-4CF2-8D3E-2E024CD78BBE"
+      ],
+      "take": 20
+     }
+    }
+   ]
+  }
+ }
+}

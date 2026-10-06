@@ -1,0 +1,85 @@
+{
+ "_note": "Recorded from the Qloo hackathon API on 2026-10-06 via `qloo api insights` (harness 0.1.26): urn:entity:locality returns popularity-ordered localities (country, states, cities) with an empty query block, i.e. no affinity for the signal. No credentials.",
+ "args": [
+  "api",
+  "insights"
+ ],
+ "input": {
+  "filter.type": "urn:entity:locality",
+  "signal.interests.entities": "AFBC71A7-9439-4AB0-AB68-D14B11AAF836",
+  "filter.location.query": "United States",
+  "take": 10
+ },
+ "output": [
+  {
+   "name": "Los Angeles County",
+   "entity_id": "10F17338-97FE-40A3-9434-F6D59F000A9E",
+   "subtype": "urn:entity:locality",
+   "popularity": 1,
+   "query": {}
+  },
+  {
+   "name": "New York City",
+   "entity_id": "81E61924-6CEE-4AB4-93D3-282A5C784AB8",
+   "subtype": "urn:entity:locality",
+   "popularity": 1,
+   "query": {}
+  },
+  {
+   "name": "United States",
+   "entity_id": "FCA82A91-546B-4A8F-BC61-DB14088A7E94",
+   "subtype": "urn:entity:locality",
+   "popularity": 0.9999993356691207,
+   "query": {}
+  },
+  {
+   "name": "California",
+   "entity_id": "3FE97E82-A5BC-453F-99A7-F7F077F9D873",
+   "subtype": "urn:entity:locality",
+   "popularity": 0.9999714337721903,
+   "query": {}
+  },
+  {
+   "name": "Texas",
+   "entity_id": "000B85AB-33A8-483F-842F-739BFCEA7B5E",
+   "subtype": "urn:entity:locality",
+   "popularity": 0.9999681121177938,
+   "query": {}
+  },
+  {
+   "name": "Florida",
+   "entity_id": "733E5EA2-68EF-4647-AE0A-4631E19EECE3",
+   "subtype": "urn:entity:locality",
+   "popularity": 0.999966119125156,
+   "query": {}
+  },
+  {
+   "name": "New York",
+   "entity_id": "BDFC9271-4583-412E-84D8-F285BB8220FE",
+   "subtype": "urn:entity:locality",
+   "popularity": 0.9999388815591048,
+   "query": {}
+  },
+  {
+   "name": "Georgia",
+   "entity_id": "ED88686F-5463-40DE-95A6-67A3A7A69881",
+   "subtype": "urn:entity:locality",
+   "popularity": 0.9999063293460194,
+   "query": {}
+  },
+  {
+   "name": "Illinois",
+   "entity_id": "3C810436-FA8B-44B2-8584-909EE3726340",
+   "subtype": "urn:entity:locality",
+   "popularity": 0.9998996860372265,
+   "query": {}
+  },
+  {
+   "name": "Ohio",
+   "entity_id": "FEB954BC-D9DE-4B74-A0BF-058BA9602EE7",
+   "subtype": "urn:entity:locality",
+   "popularity": 0.9998937070593128,
+   "query": {}
+  }
+ ]
+}

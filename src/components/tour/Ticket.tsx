@@ -38,9 +38,11 @@ export function PitchLetter({ pitch, city }: { pitch: Insight; city: string }) {
   );
 }
 
-export function StopTicket({ stop, active, writing }: { stop: StopView; active: boolean; writing: boolean }) {
+/** `emerging`: the act is planned from proxies, so the "opener" is a support slot to pitch for, not an act opening for them. */
+export function StopTicket({ stop, active, writing, emerging = false }: { stop: StopView; active: boolean; writing: boolean; emerging?: boolean }) {
   const n = stop.order ?? stop.rank;
-  const sample = isSample(stop.city.name);
+  // Sample runs mark Qloo-derived names "(sample)"; city names are reference geography, so check the data too.
+  const sample = isSample(stop.city.name) || stop.venues.some((v) => isSample(v.name)) || isSample(stop.opener?.name ?? "");
   return (
     <article id={`stop-${stop.stopId}`} data-stop={stop.stopId} aria-label={`Stop ${n}: ${clean(stop.city.name)}`}
       className={`ticket slide-in scroll-mt-28 overflow-hidden rounded-2xl border bg-surface ${active ? "border-accent" : "border-line"}`}>
@@ -54,6 +56,13 @@ export function StopTicket({ stop, active, writing }: { stop: StopView; active: 
       <div className="tear-line mx-5" />
 
       <div className="space-y-5 p-5">
+        {stop.city.hotspot && (
+          <p className="flex flex-wrap items-center gap-1.5 text-sm">
+            <span className="rounded-full bg-accent px-2.5 py-0.5 font-mono text-[11px] font-bold uppercase tracking-wider text-accent-ink">Fan hotspot</span>
+            <span className="text-muted">Qloo&apos;s country-wide fan map puts a hotspot near {clean(stop.city.name)}</span>
+            <Chip kind={sample ? "sample" : "qloo"} /><Cites ids={[stop.city.hotspot.evidence]} />
+          </p>
+        )}
         {stop.cluster && (
           <p className="flex flex-wrap items-center gap-1.5 text-sm">
             {isCoordinate(stop.cluster.name) ? (
@@ -69,7 +78,7 @@ export function StopTicket({ stop, active, writing }: { stop: StopView; active: 
 
         <div>
           <h4 className="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.2em] text-muted">
-            Rooms near the fans {stop.venues[0] && <Chip kind={sample ? "sample" : "qloo"} />}{stop.venues[0] && <Cites ids={[stop.venues[0].evidence]} />}
+            Rooms this audience favours {stop.venues[0] && <Chip kind={sample ? "sample" : "qloo"} />}{stop.venues[0] && <Cites ids={[stop.venues[0].evidence]} />}
           </h4>
           {stop.venues.length ? (
             <ul className="mt-2 divide-y divide-line">
@@ -77,7 +86,7 @@ export function StopTicket({ stop, active, writing }: { stop: StopView; active: 
                 <li key={v.entityId} className="flex items-center justify-between gap-3 py-2">
                   <div className="min-w-0">
                     <div className="truncate font-medium">{clean(v.name)}</div>
-                    {v.address && <div className="truncate text-xs text-muted">{v.address}</div>}
+                    {(v.address || v.area) && <div className="truncate text-xs text-muted">{v.address ?? v.area}</div>}
                   </div>
                   {v.affinity !== undefined && <span className="shrink-0 font-mono text-sm text-muted" title="Qloo affinity, 0–100">{Math.round(v.affinity * 100)}</span>}
                 </li>
@@ -89,7 +98,7 @@ export function StopTicket({ stop, active, writing }: { stop: StopView; active: 
         {stop.opener && (
           <div>
             <h4 className="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.2em] text-muted">
-              Opener idea <Chip kind={sample ? "sample" : "qloo"} /><Cites ids={[stop.opener.evidence]} />
+              {emerging ? "Support slot to pitch for" : "Opener idea"} <Chip kind={sample ? "sample" : "qloo"} /><Cites ids={[stop.opener.evidence]} />
             </h4>
             <p className="mt-1 font-display text-2xl uppercase">{clean(stop.opener.name)}</p>
             {stop.opener.overlap && stop.opener.overlap.shared.length > 0 && (

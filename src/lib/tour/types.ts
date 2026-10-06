@@ -23,9 +23,21 @@ export type TourInput = {
   capacity?: [number, number];
 };
 
-export type City = { entityId: string; name: string; affinity: number; lat?: number; lng?: number; evidence: string };
+/**
+ * A candidate stop. `affinity` is the city's best room affinity: Qloo's affinity (0–1) between the
+ * audience and the best-matching live room in that city, comparable across cities because it is
+ * the same signal scored against places. `hotspot` is set when the country-wide fan heatmap has a
+ * hotspot cell within reach of the city. `rooms` are the rooms behind the score.
+ */
+export type City = {
+  entityId: string; name: string; affinity: number; lat?: number; lng?: number; evidence: string;
+  /** Qloo location query used for this city's calls, e.g. "Portland, Oregon". */
+  query?: string;
+  hotspot?: { affinity: number; cells: number; evidence: string };
+  rooms?: VenueRef[];
+};
 export type Cluster = { name: string; lat: number; lng: number; affinity: number; evidence: string };
-export type VenueRef = { entityId: string; name: string; address?: string; affinity?: number; lat?: number; lng?: number; evidence: string };
+export type VenueRef = { entityId: string; name: string; address?: string; area?: string; affinity?: number; lat?: number; lng?: number; evidence: string };
 export type Opener = { entityId: string; name: string; affinity?: number; evidence: string; overlap?: { shared: string[]; evidence: string } };
 
 /** Qloo data for one stop, streamed as soon as its calls finish. */
@@ -44,6 +56,13 @@ export type FanProfile = {
   alsoLikes: { domain: "brand" | "movie" | "tv_show"; items: { name: string; affinity?: number }[]; evidence: string }[];
 };
 
+/**
+ * How the cities were found, so the UI can say when data is thin. `hotspotCells` counts the
+ * country-wide heatmap cells, `remoteCells` those far from any touring market, and
+ * `roomFallback` is true when markets were added from room affinity because hotspots were too few.
+ */
+export type Coverage = { basis: "hotspots" | "shortlist"; region?: string; hotspotCells: number; remoteCells: number; hotspotMarkets: number; roomFallback: boolean; scored: number; unscored: string[]; evidence?: string; limited: boolean };
+
 export type TourStop = StopData & { order: number; why?: Insight; pitch?: Insight };
 
 export type TourPlan = {
@@ -56,6 +75,7 @@ export type TourPlan = {
   inputs: { region?: string; candidateCities?: string[]; stops: number; capacity?: [number, number] };
   fan: FanProfile;
   stops: TourStop[];
+  coverage?: Coverage;
   summary?: Insight;
   theme: Insight[];
   merch: Insight[];
@@ -116,7 +136,7 @@ export type TourEvent =
   | { type: "source"; source: Source }
   | { type: "step"; label: string; evidence?: string[]; failed?: boolean }
   | { type: "fan"; fan: FanProfile }
-  | { type: "cities"; cities: City[] }
+  | { type: "cities"; cities: City[]; coverage?: Coverage }
   | { type: "stop"; stop: StopData }
   | { type: "writing"; llm: string }
   | { type: "summary"; summary: Insight }

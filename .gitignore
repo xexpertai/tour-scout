@@ -43,3 +43,9 @@ next-env.d.ts
 
 # local caches (Nominatim names, Qloo verification dumps)
 /.cache/
+
+# knowledge graph (generated locally by graphify)
+/graphify-out/
+
+# video build output (scripts/video/make-draft.sh)
+/video/out/

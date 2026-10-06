@@ -39,6 +39,44 @@ test("a run streams cities and every stop, then a plan whose citations all exist
   }
   assert.ok(plan.fan.tags.length && plan.fan.demographics && plan.fan.alsoLikes.length === 2);
   assert.equal(plan.artist.arenaScale, false);
+  // Cities come from the country-wide fan heatmap, snapped to touring markets.
+  assert.equal(plan.coverage.basis, "hotspots");
+  assert.ok(plan.coverage.hotspotCells > 0 && plan.coverage.hotspotMarkets >= 4);
+  assert.ok(plan.stops.every((s: any) => s.city.hotspot && ids.has(s.city.hotspot.evidence)), "every stop is near a fan hotspot");
+  assert.equal(new Set(plan.stops.map((s: any) => s.opener.entityId)).size, plan.stops.length, "each stop suggests a different opener");
+});
+
+test("entity_tags and compare_audiences keep taste tags and drop place, business, region and identity tags", async () => {
+  const { isAudienceTag } = await import("../src/lib/qloo.ts");
+  const fixture = JSON.parse(await (await import("node:fs/promises")).readFile(new URL("./fixtures/entity-tags-big-thief.json", import.meta.url), "utf8"));
+  const kept = fixture.output.results.filter(isAudienceTag).map((t: any) => t.name);
+  assert.deepEqual(kept, ["Intimacy", "Sensitive", "Vulnerability"]);
+  const comedian = JSON.parse(await (await import("node:fs/promises")).readFile(new URL("./fixtures/entity-tags-comedian.json", import.meta.url), "utf8"));
+  const comedianKept = comedian.output.results.filter(isAudienceTag).map((t: any) => t.name.toLowerCase());
+  assert.ok(!comedianKept.some((n: string) => /african|black|american|protagonist/.test(n)), `no identity tags: ${comedianKept}`);
+  const compare = JSON.parse(await (await import("node:fs/promises")).readFile(new URL("./fixtures/compare-audiences.json", import.meta.url), "utf8"));
+  const shared = compare.output.results.tags.filter((t: any) => isAudienceTag({ id: t.tag_id, type: t.subtype, name: t.name })).map((t: any) => t.name);
+  assert.ok(shared.includes("Folk") && !shared.includes("United States"));
+});
+
+test("an opener whose Qloo description names the act (a member or side project) is skipped", async () => {
+  const { isRelatedAct } = await import("../src/lib/tour/pipeline.ts");
+  assert.equal(isRelatedAct("best known as the lead vocalist and guitarist of the indie folk band Big Thief.", ["Big Thief"]), true);
+  assert.equal(isRelatedAct("Australian singer-songwriter known for intimate indie rock.", ["Big Thief"]), false);
+  assert.equal(isRelatedAct(undefined, ["Big Thief"]), false);
+});
+
+test("a real country-wide heatmap snaps hotspot cells to touring markets and counts remote ones", async () => {
+  const { nearestMarket } = await import("../src/lib/markets.ts");
+  const fixture = JSON.parse(await (await import("node:fs/promises")).readFile(new URL("./fixtures/where-popular-us-big-thief.json", import.meta.url), "utf8"));
+  const cells = fixture.output.results.map((r: any) => ({ lat: r.location.latitude, lng: r.location.longitude }));
+  const markets = new Set(cells.map((c: any) => nearestMarket(c)?.name).filter(Boolean));
+  for (const m of ["Northampton", "Burlington", "Portland, OR", "Austin"]) assert.ok(markets.has(m), m);
+  assert.ok(cells.some((c: any) => !nearestMarket(c)), "remote hotspots (e.g. far West Texas) are not forced into a market");
+  // A US cell near the border must not snap to a city abroad.
+  const niagara = { lat: 43.2, lng: -79.0 };
+  assert.equal(nearestMarket(niagara)?.name, "Toronto");
+  assert.equal(nearestMarket(niagara, 75, "United States"), undefined);
 });
 
 test("model text that cites fake evidence or makes unsupported claims is relabelled or withheld", async () => {
@@ -55,6 +93,10 @@ test("model text that cites fake evidence or makes unsupported claims is relabel
   };
   const plan = planOf(await collect(planTour({ artist, region: "United States", stops: 2 }, undefined, provider)));
   assert.equal(plan.summary.kind, "general", "fake evidence id dropped");
+  const sizeProvider = { name: "claude" as const, async synthesize() { return { summary: { text: "Book rooms of 1,500–3,000 in each city.", evidence: ["Q1"] }, stops: [], theme: [], merch: [], risks: [] }; } };
+  const sized = planOf(await collect(planTour({ artist, region: "United States", stops: 2 }, undefined, sizeProvider)));
+  assert.equal(sized.summary.kind, "template", "a withheld summary falls back to the templated one");
+  assert.ok(sized.withheld.some((w: any) => w.field === "summary"));
   assert.equal(plan.theme[0].kind, "interpretation");
   assert.equal(plan.withheld.length, 2);
   const s1 = plan.stops.find((s: any) => s.stopId === "s1");
@@ -76,7 +118,7 @@ test("emerging-artist mode scouts with proxy artists and arena-scale artists are
   assert.deepEqual(emergingPlan.artist.proxyOf, ["Mitski (sample)"]);
   assert.equal(emergingPlan.stops.length, 3);
 
-  const arena = { ...artist, name: "Coldplay (sample)", popularity: 0.995 };
+  const arena = { ...artist, name: "Coldplay (sample)", popularity: 0.9995 };
   const arenaPlan = planOf(await collect(planTour({ artist: arena, region: "United States", stops: 2 }, undefined, scriptedProvider)));
   assert.equal(arenaPlan.artist.arenaScale, true);
   assert.match(arenaPlan.summary.text, /arena-scale/);
@@ -85,7 +127,11 @@ test("emerging-artist mode scouts with proxy artists and arena-scale artists are
 test("candidate cities are ranked, and the route visits nearest stops in turn", async () => {
   const plan = planOf(await collect(planTour({ artist, candidateCities: ["Chicago", "Austin", "Seattle"], stops: 3 }, undefined, scriptedProvider)));
   assert.equal(plan.stops.length, 3);
-  assert.ok(plan.sources.some((s: any) => s.call.workflow === "rank"));
+  assert.equal(plan.coverage.basis, "shortlist");
+  // Each city is scored by room affinity (a place recommendation filtered to that city), best first.
+  for (const city of ["Chicago", "Austin", "Seattle"]) assert.ok(plan.sources.some((s: any) => s.label.startsWith(`Rooms in ${city}`)), city);
+  const byScore = [...plan.stops].sort((a: any, b: any) => a.rank - b.rank).map((s: any) => s.city.affinity);
+  assert.deepEqual(byScore, [...byScore].sort((a, b) => b - a));
 
 });
 
@@ -124,11 +170,11 @@ test("streamed model text reaches each stop as soon as that stop's entry is comp
   const provider = {
     name: "claude" as const,
     async synthesize(_input: unknown, onPartial?: (s: any) => void) {
-      const why = (id: string) => ({ stop_id: id, why: { text: `Why ${id}`, evidence: ["Q1"] }, pitch: { text: `Pitch ${id}`, evidence: ["Q1"] } });
+      const why = (id: string) => ({ stop_id: id, why: { text: `Why ${id} is a strong stop for this act.`, evidence: ["Q1"] }, pitch: { text: `Pitch ${id} to the booker, citing the data.`, evidence: ["Q1"] } });
       onPartial?.({ summary: { text: "Summ", evidence: [] } });
-      onPartial?.({ summary: { text: "Summary.", evidence: ["Q1"] }, stops: [why("s1")] });
-      onPartial?.({ summary: { text: "Summary.", evidence: ["Q1"] }, stops: [why("s1"), why("s2")] });
-      const done = { summary: { text: "Summary.", evidence: ["Q1"] }, stops: [why("s1"), why("s2")], theme: [], merch: [], risks: [] };
+      onPartial?.({ summary: { text: "Summary of the whole tour in one line.", evidence: ["Q1"] }, stops: [why("s1")] });
+      onPartial?.({ summary: { text: "Summary of the whole tour in one line.", evidence: ["Q1"] }, stops: [why("s1"), why("s2")] });
+      const done = { summary: { text: "Summary of the whole tour in one line.", evidence: ["Q1"] }, stops: [why("s1"), why("s2")], theme: [], merch: [], risks: [] };
       onPartial?.(done);
       return done;
     },
@@ -136,9 +182,17 @@ test("streamed model text reaches each stop as soon as that stop's entry is comp
   const events = await collect(planTour({ artist, region: "United States", stops: 2 }, undefined, provider));
   const texts = events.filter((e) => e.type === "stop_text");
   assert.deepEqual(texts.map((e) => e.stopId), ["s1", "s2"]);
-  assert.equal(texts[0].pitch.text, "Pitch s1");
+  assert.equal(texts[0].pitch.text, "Pitch s1 to the booker, citing the data.");
   assert.equal(events.filter((e) => e.type === "summary").length, 1);
   assert.ok(events.findIndex((e) => e.type === "stop_text") < events.findIndex((e) => e.type === "plan"));
+});
+
+test("a degenerate model payload is recognised as unusable", async () => {
+  const { usableSynthesis } = await import("../src/lib/llm.ts");
+  const long = (t: string) => ({ text: `${t} with enough words to be a real sentence.`, evidence: ["Q1"] });
+  assert.equal(usableSynthesis({ summary: { text: "text", evidence: [] }, stops: [] }, ["s1", "s2"]), false);
+  assert.equal(usableSynthesis({ summary: long("Summary"), stops: [{ stop_id: "s1", why: long("Why"), pitch: long("Pitch") }] }, ["s1", "s2"]), true);
+  assert.equal(usableSynthesis({ summary: long("Summary"), stops: [] }, ["s1", "s2"]), false);
 });
 
 test("templated text is never labelled as AI", async () => {

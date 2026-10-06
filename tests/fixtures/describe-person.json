@@ -1,0 +1,53 @@
+{
+ "_note": "Recorded from the Qloo hackathon API on 2026-10-06 via qloo exec (harness 0.1.26); execution ids removed, no credentials.",
+ "args": [
+  "exec",
+  "describe"
+ ],
+ "input": {
+  "entity": "Cedric the Entertainer",
+  "type": "person"
+ },
+ "output": {
+  "schema_version": "1.0-preview.1",
+  "operation": "describe",
+  "status": "ok",
+  "interpretation": {
+   "entity": {
+    "input": "Cedric the Entertainer",
+    "entityId": "3B124908-B8E6-4CF2-8D3E-2E024CD78BBE",
+    "name": "Cedric the Entertainer",
+    "type": "urn:entity:person",
+    "match": "exact"
+   }
+  },
+  "results": [
+   {
+    "entity_id": "3B124908-B8E6-4CF2-8D3E-2E024CD78BBE",
+    "name": "Cedric the Entertainer",
+    "popularity": 0.9434774573009643,
+    "properties": {
+     "short_description": "American actor and comedian",
+     "image": {
+      "url": "https://images.qloo.com/i/3B124908-B8E6-4CF2-8D3E-2E024CD78BBE-420x-auto.jpg"
+     }
+    }
+   }
+  ],
+  "result_count": 1,
+  "provenance": {
+   "endpoint": "/entities",
+   "requests": [
+    {
+     "method": "GET",
+     "path": "/entities",
+     "query": {
+      "entity_ids": [
+       "3B124908-B8E6-4CF2-8D3E-2E024CD78BBE"
+      ]
+     }
+    }
+   ]
+  }
+ }
+}

@@ -1,0 +1,215 @@
+{
+ "_note": "Recorded from the Qloo hackathon API on 2026-10-06 via qloo exec (harness 0.1.26); execution ids removed, no credentials.",
+ "args": [
+  "exec",
+  "recommend"
+ ],
+ "input": {
+  "target_type": "place",
+  "signals": [
+   "AFBC71A7-9439-4AB0-AB68-D14B11AAF836"
+  ],
+  "include_tags": [
+   "urn:tag:category:place:live_music_venue"
+  ],
+  "filter_location": "United States",
+  "limit": 20
+ },
+ "output": {
+  "schema_version": "1.0-preview.1",
+  "operation": "recommend",
+  "status": "ok",
+  "interpretation": {
+   "target_type": "urn:entity:place",
+   "signals": [
+    {
+     "input": "AFBC71A7-9439-4AB0-AB68-D14B11AAF836",
+     "entityId": "AFBC71A7-9439-4AB0-AB68-D14B11AAF836",
+     "name": "Phoebe Bridgers",
+     "type": "urn:entity:artist",
+     "match": "identifier"
+    }
+   ],
+   "signal_tags": [],
+   "filter_location": "United States",
+   "include_tags": [
+    {
+     "input": "urn:tag:category:place:live_music_venue",
+     "tagId": "urn:tag:category:place:live_music_venue",
+     "name": "urn:tag:category:place:live_music_venue",
+     "match": "identifier"
+    }
+   ],
+   "include_tags_operator": "union",
+   "exclude_tags": []
+  },
+  "results": [
+   {
+    "entity_id": "89AA63C9-7322-46DA-B7EB-0B608CFE580C",
+    "name": "Rockefeller Memorial Chapel",
+    "type": "urn:entity",
+    "subtype": "urn:entity:place",
+    "popularity": 0.9841569837090065,
+    "affinity": 0.9103702813861243,
+    "properties": {
+     "description": "1928 Gothic chapel on a university campus, noted for its intricate tiled ceiling, stained glass, and regular concerts and guided tours.",
+     "short_description": "1928 Gothic chapel on a university campus, noted for its intricate tiled ceiling, stained glass, and regular concerts and guided tours.",
+     "geocode": {
+      "city": "Chicago",
+      "name": "Hyde Park",
+      "metro": "Chicago",
+      "country": "United States",
+      "country_code": "US",
+      "admin1_region": "Illinois",
+      "admin2_region": "Cook County"
+     },
+     "address": "5850 S Woodlawn Ave Chicago, IL 60637",
+     "price_level": null,
+     "business_rating": 4.800000190734863
+    }
+   },
+   {
+    "entity_id": "D3E92F38-AAE5-4A19-A2CF-A8E89A47DF23",
+    "name": "The Chicago Theatre",
+    "type": "urn:entity",
+    "subtype": "urn:entity:place",
+    "popularity": 0.9999212510971913,
+    "affinity": 0.9093404711667705,
+    "properties": {
+     "description": "Historic French Baroque\u2013style 3,600-seat theater on State Street hosting national music, comedy, and live events since 1921.",
+     "short_description": "Historic French Baroque\u2013style 3,600-seat theater on State Street hosting national music, comedy, and live events since 1921.",
+     "geocode": {
+      "city": "Chicago",
+      "name": "Loop",
+      "metro": "Chicago",
+      "country": "United States",
+      "country_code": "US",
+      "admin1_region": "Illinois",
+      "admin2_region": "Cook County"
+     },
+     "address": "175 N State St Chicago, IL 60601",
+     "price_level": null,
+     "business_rating": 4.699999809265137
+    }
+   },
+   {
+    "entity_id": "40C619EA-BDEC-4946-8492-F6E8AE64745B",
+    "name": "Constellation",
+    "type": "urn:entity",
+    "subtype": "urn:entity:place",
+    "popularity": 0.9627876145805823,
+    "affinity": 0.9075249092910572,
+    "properties": {
+     "description": "Intimate Chicago performance space showcasing jazz, classical, experimental music, and dance with flexible seating configurations and a full bar.",
+     "short_description": "Intimate Chicago performance space showcasing jazz, classical, experimental music, and dance with flexible seating configurations and a full bar.",
+     "geocode": {
+      "city": "Chicago",
+      "name": "North Center",
+      "metro": "Chicago",
+      "country": "United States",
+      "country_code": "US",
+      "admin1_region": "Illinois",
+      "admin2_region": "Cook County"
+     },
+     "address": "3111 N Western Ave Chicago, IL 60618",
+     "price_level": null,
+     "business_rating": 4.699999809265137
+    }
+   },
+   {
+    "entity_id": "D7614051-E3AD-49A7-B37C-001082527FAC",
+    "name": "Rumsey Playfield",
+    "type": "urn:entity",
+    "subtype": "urn:entity:place",
+    "popularity": 0.9572400886890945,
+    "affinity": 0.90467639253865,
+    "properties": {
+     "description": "Open Central Park lawn hosting SummerStage outdoor concerts and recreational sports near East 71st Street.",
+     "short_description": "Open Central Park lawn hosting SummerStage outdoor concerts and recreational sports near East 71st Street.",
+     "geocode": {
+      "city": "New York",
+      "name": null,
+      "metro": "New York City",
+      "country": "United States",
+      "country_code": "US",
+      "admin1_region": "New York",
+      "admin2_region": "New York County"
+     },
+     "address": "E 71st St New York, NY 10021",
+     "price_level": null,
+     "business_rating": 4.599999904632568
+    }
+   },
+   {
+    "entity_id": "40D3CED6-20A6-4285-97E0-9C8EEA1EC467",
+    "name": "Brooklyn Steel",
+    "type": "urn:entity",
+    "subtype": "urn:entity:place",
+    "popularity": 0.9996669887199626,
+    "affinity": 0.9037683333041172,
+    "properties": {
+     "description": "Converted Williamsburg warehouse hosting lively, large-capacity concerts and indie shows, operated by The Bowery Presents.",
+     "short_description": "Converted Williamsburg warehouse hosting lively, large-capacity concerts and indie shows, operated by The Bowery Presents.",
+     "geocode": {
+      "city": "New York",
+      "name": "Williamsburg",
+      "metro": "New York City",
+      "country": "United States",
+      "country_code": "US",
+      "admin1_region": "New York",
+      "admin2_region": "Kings County"
+     },
+     "address": "319 Frost St Brooklyn, NY 11222",
+     "price_level": null,
+     "business_rating": 4.599999904632568
+    }
+   },
+   {
+    "entity_id": "DB4BAD57-7497-43A6-AECE-B7F3759AE281",
+    "name": "Pier 36 NYC",
+    "type": "urn:entity",
+    "subtype": "urn:entity:place",
+    "popularity": 0.9991556780373396,
+    "affinity": 0.903019587047966,
+    "properties": {
+     "description": "Waterfront Manhattan event and entertainment venue hosting concerts, immersive exhibitions, conferences, and large-scale private events.",
+     "short_description": "Waterfront Manhattan event and entertainment venue hosting concerts, immersive exhibitions, conferences, and large-scale private events.",
+     "geocode": {
+      "city": "New York",
+      "name": "Lower East Side",
+      "metro": "New York City",
+      "country": "United States",
+      "country_code": "US",
+      "admin1_region": "New York",
+      "admin2_region": "New York County"
+     },
+     "address": "299 South St New York, NY 10002",
+     "price_level": null,
+     "business_rating": 4.300000190734863
+    }
+   }
+  ],
+  "result_count": 20,
+  "provenance": {
+   "endpoint": "/v2/insights",
+   "requests": [
+    {
+     "method": "GET",
+     "path": "/v2/insights",
+     "query": {
+      "filter.type": "urn:entity:place",
+      "take": 20,
+      "signal.interests.entities": [
+       "AFBC71A7-9439-4AB0-AB68-D14B11AAF836"
+      ],
+      "filter.location.query": "United States",
+      "filter.tags": [
+       "urn:tag:category:place:live_music_venue"
+      ],
+      "operator.filter.tags": "union"
+     }
+    }
+   ]
+  }
+ }
+}

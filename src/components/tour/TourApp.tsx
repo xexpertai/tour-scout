@@ -8,6 +8,7 @@ import { ScoutView, type Heading } from "@/components/tour/ScoutView";
 import { ThemeToggle } from "@/components/tour/atoms";
 import { useTourRun } from "@/components/tour/useTourRun";
 import { PRESETS } from "@/lib/tour/presets";
+import { ARENA_POPULARITY } from "@/lib/tour/scale";
 import type { ArtistKind, TourInput, TourPlan } from "@/lib/tour/types";
 
 type View =
@@ -19,7 +20,7 @@ const headingFor = (input: TourInput): Heading => ({
   name: input.artist?.name ?? input.emerging?.name ?? "Your tour",
   sub: `${input.stops} stops · ${input.candidateCities?.length ? "your cities" : input.region ?? ""}`,
   proxyOf: input.emerging?.proxies.map((p) => p.name),
-  arenaScale: (input.artist?.popularity ?? 0) >= 0.97,
+  arenaScale: (input.artist?.popularity ?? 0) >= ARENA_POPULARITY,
 });
 
 const presetView = (slug?: string): View | undefined => {

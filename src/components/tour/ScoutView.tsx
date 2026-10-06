@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { InsightText, Section, Writing, clean, fitDisplay, shortDate } from "./atoms";
 import { downloadCsv } from "./exportCsv";
 import { ScoutPanel } from "./FollowUps";
-import { Activity, CreditsRoll, FanLineup, ShowIdeas, WithheldNote } from "./PlanSections";
+import { Activity, CoverageNote, CreditsRoll, FanLineup, ShowIdeas, WithheldNote } from "./PlanSections";
 import { StopTicket } from "./Ticket";
 import type { RunState } from "./useTourRun";
 import type { MapCity, MapGhost, MapStop } from "./TourMap";
@@ -19,7 +19,7 @@ const ERROR_TITLES: Record<string, string> = {
   QLOO_AUTH: "Qloo rejected the server's credential",
   QLOO_NOT_INSTALLED: "The Qloo connection isn't set up on this server",
   QLOO_TIMEOUT: "Qloo took too long to answer",
-  TOUR_NO_CITIES: "Qloo found no cities for this artist and region",
+  TOUR_NO_CITIES: "Qloo found no cities with matching rooms for this act and region",
 };
 
 export type Heading = { name: string; sub: string; proxyOf?: string[]; arenaScale?: boolean };
@@ -133,7 +133,7 @@ export function ScoutView({ state, heading, onRetry, onRerunLive, onAsk, onApply
           <p className="font-mono text-[11px] uppercase tracking-[0.25em] text-accent">{heading.sub}</p>
           <h1 className="mt-1 font-display uppercase leading-[0.9]" style={fitDisplay(heading.name, "4.5rem")}>{clean(heading.name)}</h1>
           {heading.proxyOf?.length ? <p className="mt-2 text-sm text-muted">Emerging act — planned from the fans of {heading.proxyOf.map(clean).join(", ")}.</p> : null}
-          {heading.arenaScale && <p className="mt-2 text-sm text-muted">Arena-scale act: the plan still works, but venue suggestions may skew large.</p>}
+          {heading.arenaScale && <p className="mt-2 text-sm text-muted">Arena-scale act: the plan shows where the fans are, but the rooms are the club and theatre rooms this audience favours, not arenas.</p>}
           <div className="mt-3 flex flex-wrap gap-1.5">
             {origin?.kind === "preset" && <Badge>Cached run · {shortDate(origin.capturedAt)}</Badge>}
             {origin?.kind === "shared" && <Badge>Shared plan · {shortDate(origin.createdAt)}</Badge>}
@@ -142,6 +142,9 @@ export function ScoutView({ state, heading, onRetry, onRerunLive, onAsk, onApply
             {llmLabel(state.llm) && <Badge>{llmLabel(state.llm)}</Badge>}
           </div>
           {state.plan && <div className="mt-4"><Toolbar state={state} /></div>}
+          {origin?.kind === "preset" && (
+            <p className="mt-2 text-xs text-muted">Demo using a public {heading.proxyOf?.length ? "artist comparison" : "name"} and aggregate Qloo data. Not affiliated with or endorsed by {heading.proxyOf?.length ? heading.proxyOf.map(clean).join(" or ") : clean(heading.name)}; pitch emails are sample drafts.</p>
+          )}
           {origin?.kind === "preset" && onRerunLive && !running && (
             <button type="button" onClick={onRerunLive} className="no-print mt-2 min-h-11 font-mono text-xs uppercase tracking-wider text-muted underline underline-offset-4 hover:text-ink">Re-run this live</button>
           )}
@@ -166,9 +169,10 @@ export function ScoutView({ state, heading, onRetry, onRerunLive, onAsk, onApply
         {(running || state.steps.length > 0) && state.status !== "done" && <Activity steps={state.steps} running={running} />}
 
         <Section title="The route">
+          <div className="mb-5"><CoverageNote coverage={state.coverage} region={state.coverage?.region} /></div>
           {state.summary ? <InsightText item={state.summary} className="mb-5" /> : writing ? <div className="mb-5"><Writing label="Writing the summary…" /></div> : null}
           <div className="space-y-5">
-            {ordered.map((s) => <StopTicket key={s.stopId} stop={s} active={s.stopId === activeId} writing={running} />)}
+            {ordered.map((s) => <StopTicket key={s.stopId} stop={s} active={s.stopId === activeId} writing={running} emerging={Boolean(heading.proxyOf?.length)} />)}
             {running && ordered.length === 0 && [0, 1].map((i) => <div key={i} className="skeleton h-64 rounded-2xl" />)}
           </div>
         </Section>

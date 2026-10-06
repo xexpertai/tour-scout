@@ -1,0 +1,51 @@
+# Render Blueprint for the hosted demo. NOT applied: deploying makes the demo public and may cost
+# money, so it needs the user's approval. Exact steps: docs/DEPLOY.md.
+#
+# The Qloo harness is a local CLI the app spawns, so this runs as a Docker web service (a long-running
+# container), not serverless: the hackathon kit says VM or container.
+services:
+  - type: web
+    name: tour-scout
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free               # $0, but sleeps after 15 min idle (~1 min cold start) and has no disk. Starter ($7/mo) for judging: see DEPLOY.md
+    region: oregon
+    branch: main
+    autoDeploy: false
+    healthCheckPath: /api/health
+    envVars:
+      - key: PORT
+        value: "8080"        # matches the Dockerfile
+      - key: QLOO_BASE_URL
+        value: https://hackathon.api.qloo.com
+      - key: QLOO_TRUSTED_BASE_URL
+        value: https://hackathon.api.qloo.com
+      - key: LLM_PROVIDER
+        value: claude
+      - key: DATA_DIR
+        value: /data         # ephemeral on the free plan: share links and the LLM counter reset on restart
+      # Public-demo caps. Demo flyers replay captured runs and cost nothing; these bound live use.
+      - key: TOUR_RUNS_PER_HOUR
+        value: "3"           # live tours per visitor per hour
+      - key: FOLLOWUPS_PER_HOUR
+        value: "10"          # scout questions and applies per visitor per hour
+      - key: RESOLVES_PER_HOUR
+        value: "30"
+      - key: TOUR_DAILY_CAP
+        value: "40"          # live tours per UTC day for the whole server (~29 Qloo requests each)
+      - key: LLM_DAILY_CAP
+        value: "60"          # Claude Haiku calls per UTC day (~$0.01 each): at most ~$0.60/day
+      - key: QLOO_CONCURRENCY
+        value: "3"
+      - key: NOMINATIM_USER_AGENT
+        value: "tour-scout/1.0 (Qloo hackathon demo)"
+      - key: QLOO_API_KEY
+        sync: false          # secret: entered by the user in the Render dashboard, never committed
+      - key: CLAUDE_API_KEY
+        sync: false          # secret: optional; without it plan text is templated (labelled)
+    # Paid plans only: keep share links across restarts.
+    # disk:
+    #   name: tour-scout-data
+    #   mountPath: /data
+    #   sizeGB: 1

@@ -122,7 +122,10 @@ export default function TourMap({ cities, stops, ghosts = [], activeId, focusId,
           keyboard
           title={`Stop ${s.order}: ${clean(s.name)}`}
           icon={pinIcon(s.order, s.id === activeId)}
-        />
+        >
+          {/* A permanent name, so a pin is never read as the nearest basemap label. */}
+          <Tooltip permanent direction="right" offset={[16, 0]} className="stop-label">{clean(s.name)}</Tooltip>
+        </Marker>
       ))}
     </MapContainer>
   );

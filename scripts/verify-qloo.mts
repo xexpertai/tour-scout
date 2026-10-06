@@ -7,7 +7,7 @@
  * diagnosed against the real response shape. Makes about 8 Qloo requests; prints no credentials.
  */
 process.env.QLOO_DEBUG_DIR ??= ".cache/qloo-verify";
-const { audienceDemographics, findTags, qlooMode, QLOO_BASE_URL, recommend, tasteHeatmap, wherePopular } = await import("../src/lib/qloo.ts");
+const { audienceDemographics, findTags, qlooMode, QLOO_BASE_URL, recommend, wherePopular } = await import("../src/lib/qloo.ts");
 
 const city = process.argv[2] ?? "Pune";
 const mode = await qlooMode();
@@ -38,9 +38,6 @@ const tags = await check("find_tags", () => findTags("specialty coffee", 5),
 const tagIds = tags?.tags.slice(0, 2).map((t) => t.id) ?? [];
 console.log(`  using tags: ${tags?.tags.slice(0, 2).map((t) => `${t.name} (${t.id})`).join(", ")}`);
 
-await check("heatmap (qloo api insights)", () => tasteHeatmap(city, tagIds),
-  ({ cells }) => (!cells.length ? "no cells parsed" : cells.every((c) => isScore(c.lat) && isScore(c.lng) && isScore(c.affinity)) ? undefined : "cells missing lat/lng/affinity"));
-
 const venues = await check("recommend (places)", () => recommend({ targetType: "place", tagIds, filterLocation: city, limit: 5 }),
   ({ entities }) => (entities.length ? (entities.every((e) => e.id && e.name) ? undefined : "entities missing id/name") : "no venues returned"));
 
@@ -51,7 +48,7 @@ const anchor = venues?.entities[0];
 if (anchor) {
   console.log(`  anchor venue: ${anchor.name}`);
   await check("where_popular", () => wherePopular(anchor.id, city, 10),
-    ({ cells }) => (cells.length ? undefined : "no cells parsed (check result shape in .cache/qloo-verify)"));
+    ({ cells }) => (!cells.length ? "no cells parsed (check result shape in .cache/qloo-verify)" : cells.every((c) => isScore(c.lat) && isScore(c.lng) && isScore(c.affinity)) ? undefined : "cells missing lat/lng/affinity"));
   await check("audience_demographics", () => audienceDemographics(anchor.id),
     ({ demographics }) => (Object.keys(demographics.age).length ? undefined : "no age buckets parsed (check result shape in .cache/qloo-verify)"));
 }

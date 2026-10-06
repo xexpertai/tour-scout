@@ -2,7 +2,7 @@
 
 import type { Insight, Withheld } from "@/lib/guard";
 import type { Source } from "@/lib/evidence";
-import type { FanProfile } from "@/lib/tour/types";
+import type { Coverage, FanProfile } from "@/lib/tour/types";
 import { Chip, Cites, InsightText, Section, Writing, clean, isSample } from "./atoms";
 
 const AGE: Record<string, string> = {
@@ -35,6 +35,9 @@ export function FanLineup({ fan, proxyOf }: { fan?: FanProfile; proxyOf?: string
       <div className="rounded-2xl border border-line bg-surface p-5 text-center sm:p-8">
         {proxyOf?.length ? <p className="mb-3 font-mono text-[11px] uppercase tracking-wider text-muted">Based on fans of {proxyOf.map(clean).join(", ")}</p> : null}
         <p className="font-mono text-[11px] uppercase tracking-[0.3em] text-accent">Their taste, headlining</p>
+        {fan.tags.length < 3 && (
+          <p className="mx-auto mt-2 max-w-md text-xs text-muted">Limited data: Qloo returned {fan.tags.length ? "only a few" : "no"} taste tags for this audience (identity, place and business tags are never shown).</p>
+        )}
         <div className="mt-3 flex flex-wrap items-baseline justify-center gap-x-3 gap-y-1">
           {fan.tags.map((t, i) => (
             <span key={t.id} className="font-display uppercase leading-none" style={{ fontSize: `${1.1 + 1.6 * ((t.affinity ?? 0.5) / max)}rem`, opacity: 0.55 + 0.45 * ((t.affinity ?? 0.5) / max) }}>
@@ -145,3 +148,25 @@ export function CreditsRoll({ sources }: { sources: Source[] }) {
     </Section>
   );
 }
+
+/** How the cities were found, and an honest note when the data behind them is thin. */
+export function CoverageNote({ coverage, region }: { coverage?: Coverage; region?: string }) {
+  if (!coverage) return null;
+  // Cities without matching rooms are simply skipped; data is "limited" only when hotspots fall short.
+  const limited = coverage.limited || coverage.roomFallback;
+  return (
+    <div className={`rounded-xl border px-4 py-3 text-sm ${limited ? "border-sample/60" : "border-line"} bg-surface`}>
+      {limited && <p className="mb-1 font-mono text-[11px] font-bold uppercase tracking-wider text-sample">Limited data</p>}
+      <p className="text-muted">
+        {coverage.basis === "hotspots" ? (
+          <>Cities come from Qloo&apos;s fan map of {region ?? "the region"} ({coverage.hotspotCells} hotspot cells{coverage.evidence && <> <Cites ids={[coverage.evidence]} /></>}) snapped to touring markets
+            {coverage.remoteCells > 0 && <>; {coverage.remoteCells} hotspot{coverage.remoteCells === 1 ? " lies" : "s lie"} far from any touring city and {coverage.remoteCells === 1 ? "was" : "were"} skipped</>}.
+            {coverage.roomFallback && <> Hotspots pointed to only {coverage.hotspotMarkets} touring {coverage.hotspotMarkets === 1 ? "city" : "cities"}, so cities whose rooms this audience favours were added.</>}
+            {" "}Each city is scored by room affinity.</>
+        ) : <>Your cities, each scored by room affinity.</>}
+        {coverage.unscored.length > 0 && <> No matching rooms found in {coverage.unscored.join(", ")}.</>}
+      </p>
+    </div>
+  );
+}
+

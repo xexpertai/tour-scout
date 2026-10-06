@@ -5,12 +5,27 @@
 import { randomUUID } from "node:crypto";
 import { Channel } from "../evidence.ts";
 import { insightGuard } from "../guard.ts";
+import { MARKETS } from "../markets.ts";
 import { LlmError, scriptedProvider, synthesisProvider, type RawSynthesis, type SynthesisInput, type SynthesisProvider } from "../llm.ts";
 import { QlooError, qlooMode } from "../qloo.ts";
 import { ARENA_POPULARITY, runPhaseA, signalsOf, type PhaseAResult } from "./pipeline.ts";
 import type { StopData, TourEvent, TourInput, TourPlan, TourStop } from "./types.ts";
 
 const clean = (s: string) => s.replace(/\s*\(sample\)$/, "");
+/**
+ * Touring-city names that are not stops of this run, so stop text naming one is withheld. Names that
+ * occur inside Qloo data (a venue, opener, neighbourhood or brand such as "Jackson …") are skipped.
+ */
+const offRouteOf = (a: PhaseAResult) => {
+  const stops = a.stops.map((s) => clean(s.city.name).toLowerCase());
+  const data = [
+    ...a.stops.flatMap((s) => [s.cluster?.name, s.opener?.name, ...s.venues.map((v) => `${v.name} ${v.address ?? ""}`)]),
+    ...a.fan.alsoLikes.flatMap((x) => x.items.map((i) => i.name)), ...a.fan.tags.map((t) => t.name),
+  ].filter(Boolean).join(" | ").toLowerCase();
+  // "Portland, OR" vs "Portland, ME": compare on the part before the comma.
+  const base = (n: string) => n.toLowerCase().split(",")[0];
+  return MARKETS.map((m) => m.name).filter((n) => !stops.some((s) => base(s) === base(n)) && !data.includes(base(n)));
+};
 const fmt = (o: Record<string, number>) => Object.entries(o).map(([k, v]) => `${k} ${v > 0 ? "+" : ""}${v.toFixed(2)}`).join(", ");
 
 type Point = { x: number; y: number };
@@ -84,6 +99,7 @@ export function synthesisInput(input: TourInput, a: PhaseAResult, arenaScale: bo
     },
     stops: a.stops.map((s) => ({
       stop_id: s.stopId, city: s.city.name, affinity: Math.round(s.city.affinity * 100), evidence: s.city.evidence,
+      fanHotspot: s.city.hotspot ? true : undefined, hotspotEvidence: s.city.hotspot?.evidence,
       cluster: s.cluster && !/^-?\d/.test(s.cluster.name) ? s.cluster.name : undefined, clusterEvidence: s.cluster?.evidence,
       venues: s.venues.map((v) => v.name), venuesEvidence: s.venues[0]?.evidence,
       opener: s.opener?.name, openerEvidence: s.opener?.evidence,
@@ -92,8 +108,12 @@ export function synthesisInput(input: TourInput, a: PhaseAResult, arenaScale: bo
   };
 }
 
-export function assemblePlan(input: TourInput, a: PhaseAResult, raw: RawSynthesis, meta: { qloo: "live" | "mock"; llm: string; arenaScale: boolean; phaseAMs: number; synthesisMs: number; totalMs: number }): TourPlan {
-  const { guard, list, withheld } = insightGuard(a.ledger.ids(), meta.llm.startsWith("scripted"));
+/**
+ * @param templateSummary code-written summary used when the model's summary is withheld by the guard,
+ *   so the plan never opens without one (it is labelled TEMPLATE, never AI).
+ */
+export function assemblePlan(input: TourInput, a: PhaseAResult, raw: RawSynthesis, meta: { qloo: "live" | "mock"; llm: string; arenaScale: boolean; phaseAMs: number; synthesisMs: number; totalMs: number }, templateSummary?: RawSynthesis["summary"]): TourPlan {
+  const { guard, list, withheld } = insightGuard(a.ledger.ids(), meta.llm.startsWith("scripted"), { capacity: input.capacity, offRoute: offRouteOf(a) });
   const text = new Map((raw.stops ?? []).map((s) => [String(s?.stop_id), s]));
   const stops: TourStop[] = routeOrder(a.stops).map((s, i) => ({
     ...s,
@@ -117,7 +137,8 @@ export function assemblePlan(input: TourInput, a: PhaseAResult, raw: RawSynthesi
     inputs: { region: input.region, candidateCities: input.candidateCities, stops: input.stops, capacity: input.capacity },
     fan: a.fan,
     stops,
-    summary: guard("summary", raw.summary),
+    coverage: a.coverage,
+    summary: guard("summary", raw.summary) ?? insightGuard(a.ledger.ids(), true, { capacity: input.capacity, offRoute: offRouteOf(a) }).guard("summary", templateSummary),
     theme: list("theme", raw.theme, 4),
     merch: list("merch", raw.merch, 4),
     risks: list("risks", raw.risks, 4),
@@ -160,10 +181,11 @@ export async function* planTour(input: TourInput, signal?: AbortSignal, provider
 
   // Stream finished pieces of the model's text: an entry is complete once the next one has started.
   const textEvents = new Channel<TourEvent>();
-  const { guard } = insightGuard(a.ledger.ids(), provider.name === "scripted");
+  const { guard } = insightGuard(a.ledger.ids(), provider.name === "scripted", { capacity: input.capacity, offRoute: offRouteOf(a) });
   const sent = new Set<string>();
   const onPartial = (snap: RawSynthesis) => {
-    if (!sent.has("summary") && snap.summary && snap.stops) {
+    const real = (i?: { text?: unknown }) => typeof i?.text === "string" && i.text.trim().length >= 25;
+    if (!sent.has("summary") && real(snap.summary) && snap.stops) {
       sent.add("summary");
       const summary = guard("summary", snap.summary);
       if (summary) textEvents.push({ type: "summary", summary });
@@ -172,7 +194,7 @@ export async function* planTour(input: TourInput, signal?: AbortSignal, provider
     const complete = snap.theme ? stops.length : stops.length - 1;
     for (const entry of stops.slice(0, Math.max(0, complete))) {
       const id = String(entry?.stop_id);
-      if (sent.has(id) || !a.stops.some((s) => s.stopId === id)) continue;
+      if (sent.has(id) || !a.stops.some((s) => s.stopId === id) || !real(entry?.why) || !real(entry?.pitch)) continue;
       sent.add(id);
       textEvents.push({ type: "stop_text", stopId: id, why: guard("why", entry.why), pitch: guard("pitch", entry.pitch) });
     }
@@ -197,6 +219,7 @@ export async function* planTour(input: TourInput, signal?: AbortSignal, provider
   const synthesisMs = Date.now() - synthStarted;
   yield {
     type: "plan",
-    plan: assemblePlan(input, a, raw!, { qloo: mode.mock ? "mock" : "live", llm, arenaScale, phaseAMs, synthesisMs, totalMs: Date.now() - started }),
+    plan: assemblePlan(input, a, raw!, { qloo: mode.mock ? "mock" : "live", llm, arenaScale, phaseAMs, synthesisMs, totalMs: Date.now() - started },
+      (await scriptedProvider.synthesize(sInput)).summary),
   };
 }

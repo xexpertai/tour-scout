@@ -1,0 +1,119 @@
+{
+ "_note": "Recorded from the Qloo hackathon API on 2026-10-06 via qloo exec (harness 0.1.26); execution ids removed, no credentials.",
+ "args": [
+  "exec",
+  "entity_tags"
+ ],
+ "input": {
+  "entities": [
+   "AD420A3F-5F09-4C1C-BB1E-A3DEB937F184"
+  ],
+  "entity_type": "artist",
+  "limit": 10
+ },
+ "output": {
+  "schema_version": "1.0-preview.1",
+  "operation": "entity_tags",
+  "status": "ok",
+  "interpretation": {
+   "entities": [
+    {
+     "input": "AD420A3F-5F09-4C1C-BB1E-A3DEB937F184",
+     "entityId": "AD420A3F-5F09-4C1C-BB1E-A3DEB937F184",
+     "name": "Big Thief",
+     "type": "urn:entity:artist",
+     "match": "identifier"
+    }
+   ]
+  },
+  "results": [
+   {
+    "id": "urn:tag:credit_card:place:discover",
+    "name": "Discover",
+    "type": "urn:tag:credit_card:place",
+    "popularity": 0.9999869619097692,
+    "affinity": 1
+   },
+   {
+    "id": "urn:tag:hotel_rating:place:two_star",
+    "name": "Two Star",
+    "type": "urn:tag:hotel_rating:place",
+    "popularity": 0.9999171374385933,
+    "affinity": 1
+   },
+   {
+    "id": "urn:tag:genre:brand:entertainment:record_label",
+    "name": "Record Label",
+    "type": "urn:tag:genre:brand",
+    "popularity": 0.9929838580588671,
+    "affinity": 1
+   },
+   {
+    "id": "urn:tag:inclusivity:place:identifies_as_women_owned",
+    "name": "Identifies as women-owned",
+    "type": "urn:tag:inclusivity:place",
+    "popularity": 0.9999950518091293,
+    "affinity": 1
+   },
+   {
+    "id": "urn:tag:cost_description:place:inexpensive",
+    "name": "Inexpensive",
+    "type": "urn:tag:cost_description:place",
+    "popularity": 0.9999875117087548,
+    "affinity": 1
+   },
+   {
+    "id": "urn:tag:specialty_dish:place:cheese_board",
+    "name": "Cheese Board",
+    "type": "urn:tag:specialty_dish:place",
+    "popularity": 0.9871752317756166,
+    "affinity": 1
+   },
+   {
+    "id": "urn:tag:genre:place:restaurant:bar",
+    "name": "Bar",
+    "type": "urn:tag:genre:place",
+    "popularity": 0.9999871189951937,
+    "affinity": 1
+   },
+   {
+    "id": "urn:tag:theme:qloo:intimacy",
+    "name": "Intimacy",
+    "type": "urn:tag:theme:qloo",
+    "popularity": 0.9989963026803643,
+    "affinity": 0.9999353291160078
+   },
+   {
+    "id": "urn:tag:artist:qloo:sensitive",
+    "name": "Sensitive",
+    "type": "urn:tag:artist:qloo",
+    "popularity": 0.9978656803377588,
+    "affinity": 0.9998954342804452
+   },
+   {
+    "id": "urn:tag:theme:qloo:vulnerability",
+    "name": "Vulnerability",
+    "type": "urn:tag:theme:qloo",
+    "popularity": 0.9985701299237837,
+    "affinity": 0.9997730182220971
+   }
+  ],
+  "result_count": 10,
+  "provenance": {
+   "endpoint": "/v2/insights",
+   "requests": [
+    {
+     "method": "GET",
+     "path": "/v2/insights",
+     "query": {
+      "filter.type": "urn:tag",
+      "signal.interests.entities": [
+       "AD420A3F-5F09-4C1C-BB1E-A3DEB937F184"
+      ],
+      "take": 10
+     }
+    }
+   ]
+  }
+ }
+}

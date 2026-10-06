@@ -119,3 +119,9 @@ test("a malformed answer is cleaned, cites the Q-ids in its text, and openers ne
   assert.equal(f.answer.kind, "interpretation");
   assert.equal(f.proposal?.opener, undefined, "opener on a removed stop is dropped");
 });
+
+test("leaked evidence lists and quotes are stripped from the scout's answer", async () => {
+  const { cleanAnswer } = await import("../src/lib/tour/scout.ts");
+  assert.equal(cleanAnswer('Alvvays or Andy Shauf would fit. Either enhances the lineup.",\n["Q30", "Q32", "Q31"]'), "Alvvays or Andy Shauf would fit. Either enhances the lineup.");
+  assert.equal(cleanAnswer("Keep the route as is (Q12)."), "Keep the route as is (Q12).");
+});

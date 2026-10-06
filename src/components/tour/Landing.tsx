@@ -47,7 +47,7 @@ function Flyer({ preset, index, onPlay }: { preset: Preset; index: number; onPla
   return (
     <button type="button" onClick={() => onPlay(preset.slug)}
       className={`group relative flex h-56 w-44 shrink-0 snap-start flex-col justify-between overflow-hidden rounded-lg p-4 text-left transition-transform hover:-translate-y-1 focus-visible:-translate-y-1 sm:w-52 ${FLYER_STYLES[index % FLYER_STYLES.length]}`}>
-      <span className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] opacity-80">Tour Scout presents</span>
+      <span className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] opacity-80">Demo tour · live Qloo data</span>
       <span className="font-display uppercase leading-[0.95] [container-type:inline-size]"><span className="block" style={fitDisplay(preset.flyer.headline, "2.25rem")}>{preset.flyer.headline}</span></span>
       <span className="space-y-1">
         <span className="block text-xs font-medium opacity-90">{preset.flyer.sub}</span>
@@ -87,7 +87,7 @@ export function Landing({ onSearch, onPreset, busy }: { onSearch: (name: string,
           <ol className="mt-4 grid gap-4 sm:grid-cols-3">
             {[
               ["1", "Pick an artist", "Type any musician or comedian and confirm the match — or describe an emerging act by who it sounds like."],
-              ["2", "Qloo maps the fans", "Qloo ranks cities and the neighbourhoods inside them by the audience's taste affinity, and finds rooms and openers that fit."],
+              ["2", "Qloo maps the fans", "Qloo's fan map finds the hotspots across a country; each nearby city is scored by how strongly the audience favours its live rooms, then Qloo locates the neighbourhood and an opener that fit."],
               ["3", "Get the tour + pitch", "A routed set of stops, a fan profile and a booker email per stop — every claim linked to the Qloo request behind it."],
             ].map(([n, t, d]) => (
               <li key={n} className="flex gap-3 rounded-xl border border-line bg-surface p-4">
