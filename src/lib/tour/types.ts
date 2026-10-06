@@ -35,6 +35,8 @@ export type City = {
   query?: string;
   hotspot?: { affinity: number; cells: number; evidence: string };
   rooms?: VenueRef[];
+  /** How many of Qloo's rooms were dropped as unlikely venues or outside the city. */
+  droppedRooms?: number;
 };
 export type Cluster = { name: string; lat: number; lng: number; affinity: number; evidence: string };
 export type VenueRef = { entityId: string; name: string; address?: string; area?: string; affinity?: number; lat?: number; lng?: number; evidence: string };
@@ -61,7 +63,11 @@ export type FanProfile = {
  * country-wide heatmap cells, `remoteCells` those far from any touring market, and
  * `roomFallback` is true when markets were added from room affinity because hotspots were too few.
  */
-export type Coverage = { basis: "hotspots" | "shortlist"; region?: string; hotspotCells: number; remoteCells: number; hotspotMarkets: number; roomFallback: boolean; scored: number; unscored: string[]; evidence?: string; limited: boolean };
+export type Coverage = { basis: "hotspots" | "shortlist"; region?: string;
+  /** The country-wide hotspot cells themselves (for the map's fan heat), strongest first. */
+  cells?: { lat: number; lng: number; affinity: number }[];
+  /** Rooms dropped as unlikely venues or outside the city (e.g. a farm 20 km away), per city. */
+  droppedRooms?: number; hotspotCells: number; remoteCells: number; hotspotMarkets: number; roomFallback: boolean; scored: number; unscored: string[]; evidence?: string; limited: boolean };
 
 export type TourStop = StopData & { order: number; why?: Insight; pitch?: Insight };
 
@@ -75,6 +81,8 @@ export type TourPlan = {
   inputs: { region?: string; candidateCities?: string[]; stops: number; capacity?: [number, number] };
   fan: FanProfile;
   stops: TourStop[];
+  /** Every city Qloo scored for this run (stops and runners-up), best first, without rooms. */
+  candidates?: City[];
   coverage?: Coverage;
   summary?: Insight;
   theme: Insight[];

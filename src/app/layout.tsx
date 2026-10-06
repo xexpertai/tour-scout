@@ -1,9 +1,10 @@
 import type { Metadata, Viewport } from "next";
-import { Anton, Inter, JetBrains_Mono } from "next/font/google";
+import { Anton, Barlow, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
 const display = Anton({ variable: "--font-anton", weight: "400", subsets: ["latin"] });
-const sans = Inter({ variable: "--font-inter", subsets: ["latin"] });
+// Barlow: a plain grotesk with a poster feel; mono is kept for Q-ids and request listings only.
+const sans = Barlow({ variable: "--font-inter", weight: ["400", "500", "600", "700"], subsets: ["latin"] });
 const mono = JetBrains_Mono({ variable: "--font-jetbrains", subsets: ["latin"] });
 
 export const metadata: Metadata = {

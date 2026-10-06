@@ -29,6 +29,10 @@ export type RunState = {
   fallback?: string;
   error?: { message: string; code?: string; retryable?: boolean };
   followUps: FollowUp[];
+  /** A preset's recorded scout exchange: tapping its question replays it at no cost. */
+  recordedScout?: NonNullable<CapturedRun["scout"]>;
+  /** Indexes of follow-ups that came from a recorded exchange (applied through the preset). */
+  replayedAnswers?: number[];
   /** The scout's live progress while answering a question or applying a change. */
   scout: { busy: boolean; checks: ScoutCheck[] };
 };
@@ -58,7 +62,7 @@ function fromPlan(plan: TourPlan): RunState {
     summary: plan.summary,
     fan: plan.fan,
     sources: plan.sources,
-    cities: plan.stops.map((s) => s.city),
+    cities: plan.candidates ?? plan.stops.map((s) => s.city),
     coverage: plan.coverage,
     stops: plan.stops.map((s) => ({ ...s, textDone: true })),
     followUps: plan.followUps ?? [],
@@ -168,7 +172,7 @@ export function useTourRun(sharedPlan?: TourPlan) {
       const res = await fetch(`/presets/${slug}.json`, { signal: controller.signal });
       if (!res.ok) throw new Error("This demo isn't available right now.");
       const run = (await res.json()) as CapturedRun;
-      setState((s) => ({ ...s, origin: { kind: "preset", slug, capturedAt: run.capturedAt } }));
+      setState((s) => ({ ...s, origin: { kind: "preset", slug, capturedAt: run.capturedAt }, recordedScout: run.scout }));
       const last = run.events.at(-1)?.at || 1;
       const scale = Math.min(1, 7000 / last);
       let clock = 0;
@@ -189,6 +193,35 @@ export function useTourRun(sharedPlan?: TourPlan) {
   const ask = useCallback(async (question: string): Promise<string | undefined> => {
     const plan = state.plan;
     if (!plan) return "The plan isn't finished yet.";
+    const recorded = state.origin?.kind === "preset" && state.recordedScout?.question === question ? state.recordedScout : undefined;
+    if (recorded) {
+      // Replays the captured exchange (compressed to ~6 s): same steps, same answer, no API call.
+      setState((s) => ({ ...s, scout: { busy: true, checks: [] } }));
+      const last = recorded.events.at(-1)?.at || 1;
+      const scale = Math.min(1, 6000 / last);
+      let clock = 0;
+      for (const { at, event } of recorded.events) {
+        const wait = Math.max(0, at * scale - clock);
+        if (wait > 15) await new Promise((r) => setTimeout(r, wait));
+        clock += wait;
+        const e = event as AskEvent;
+        setState((s) => {
+          if (e.type === "checking" || e.type === "step") return { ...s, scout: { busy: true, checks: addCheck(s.scout.checks, e) } };
+          if (e.type === "source") return { ...s, sources: [...s.sources, e.source] };
+          if (e.type === "answer") {
+            return {
+              ...s,
+              followUps: [...s.followUps, e.followUp],
+              replayedAnswers: [...(s.replayedAnswers ?? []), s.followUps.length],
+              scout: { busy: true, checks: [...settle(s.scout.checks), { label: e.followUp.proposal ? `proposed: ${e.followUp.proposal.summary}` : "answered", status: "done" }] },
+            };
+          }
+          return s;
+        });
+      }
+      setState((s) => ({ ...s, scout: { busy: false, checks: settle(s.scout.checks) } }));
+      return undefined;
+    }
     const body = state.origin?.kind === "preset" ? { preset: state.origin.slug, question } : { planId: plan.id, question };
     setState((s) => ({ ...s, scout: { busy: true, checks: [] } }));
     let error: string | undefined;
@@ -220,7 +253,7 @@ export function useTourRun(sharedPlan?: TourPlan) {
     }
     setState((s) => ({ ...s, scout: { busy: false, checks: settle(s.scout.checks) } }));
     return error;
-  }, [state.plan, state.origin]);
+  }, [state.plan, state.origin, state.recordedScout]);
 
   /** Applies a scout proposal: the server rebuilds the plan and the route redraws. */
   const applyChange = useCallback(async (index: number): Promise<string | undefined> => {
@@ -229,7 +262,10 @@ export function useTourRun(sharedPlan?: TourPlan) {
     setState((s) => ({ ...s, scout: { busy: true, checks: [] } }));
     let error: string | undefined;
     try {
-      const res = await fetch("/api/tour/apply", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ planId: plan.id, index }) });
+      // A recorded preset answer is applied through the preset (the server holds the same recording).
+      const replayed = state.origin?.kind === "preset" && state.replayedAnswers?.includes(index);
+      const body = replayed && state.origin?.kind === "preset" ? { preset: state.origin.slug, question: state.followUps[index]?.question } : { planId: plan.id, index };
+      const res = await fetch("/api/tour/apply", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
       error = await readStream<TourEvent>(res, (e) => setState((s) => {
         if (e.type === "step") return { ...s, scout: { busy: true, checks: addCheck(s.scout.checks, e) } };
         if (e.type === "source") return { ...s, sources: [...s.sources, e.source] };
@@ -242,7 +278,7 @@ export function useTourRun(sharedPlan?: TourPlan) {
     }
     setState((s) => ({ ...s, scout: { busy: false, checks: settle(s.scout.checks) } }));
     return error;
-  }, [state.plan]);
+  }, [state.plan, state.origin, state.replayedAnswers, state.followUps]);
 
   const reset = useCallback(() => {
     abortRef.current?.abort();

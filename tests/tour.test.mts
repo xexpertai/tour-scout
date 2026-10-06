@@ -204,3 +204,24 @@ test("templated text is never labelled as AI", async () => {
     for (const item of items) assert.equal(item.kind, "template", item.text);
   }
 });
+
+test("each demo poster lists its captured route's cities in order, and has a recorded scout exchange", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { PRESETS } = await import("../src/lib/tour/presets.ts");
+  for (const p of PRESETS) {
+    const run = JSON.parse(readFileSync(new URL(`../public/presets/${p.slug}.json`, import.meta.url), "utf8"));
+    const plan = run.events.find((e: any) => e.event.type === "plan").event.plan;
+    const cities = [...plan.stops].sort((a: any, b: any) => a.order - b.order).map((s: any) => s.city.name.replace(", ME", " ME"));
+    assert.deepEqual(p.bill, cities, p.slug);
+    assert.ok(plan.coverage?.cells?.length, `${p.slug} has hotspot cells for the map`);
+    assert.ok(run.scout?.events.some((e: any) => e.event.type === "answer"), `${p.slug} has a recorded scout answer`);
+  }
+});
+
+test("rooms that are not venues (a farm, a heritage railway) are dropped before a city is scored", async () => {
+  const { sanitizeRooms } = await import("../src/lib/tour/cities.ts");
+  const room = (name: string) => ({ id: name, name, affinity: 0.88 });
+  const { kept, dropped } = await sanitizeRooms([room("Magic Forest Farm"), room("Catskill Mountain Railroad"), room("Fuze Box"), room("The Iron Horse")], { name: "Albany", query: "Albany, New York" });
+  assert.deepEqual(kept.map((r) => r.name), ["Fuze Box", "The Iron Horse"]);
+  assert.equal(dropped, 2);
+});

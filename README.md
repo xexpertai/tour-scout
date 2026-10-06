@@ -12,11 +12,16 @@ All screenshots show **live Qloo data** (captured runs from 6 Oct 2026; text by 
 
 ## Try it in 60 seconds
 
-1. Open the app (hosted link: _pending_) and tap a **demo flyer** such as *Big Thief*. A captured live run (labelled "Cached run" with its date) opens instantly: cities glow, the route draws itself, and the stop tickets slide in.
-2. Scroll to **Ask the scout** and tap **"Swap the weakest stop for a stronger city"**. Watch the numbered trace as the scout chooses Qloo tools, then read its answer and the proposed change.
-3. Tap **Apply to my tour**. The new stop is scouted (fan cluster, rooms, opener) and the route redraws.
-4. Type any artist or comedian in the search box, confirm the **"Did you mean…?"** card, and scout a live tour.
-5. Use **Share**, **CSV** or **Print / PDF**, or tap any **Q-id** to see the Qloo request it came from.
+1. Open the app (hosted link: _pending_) and tap a **demo poster** such as *Big Thief*. A run captured from live Qloo data replays instantly:
+   - **the fan map lights up**: Qloo's country-wide hotspots bloom as heat;
+   - candidate cities get their scores;
+   - the camera eases to the winners and the route draws itself.
+2. In **Ask the scout** (docked at the bottom; a bottom sheet on phones), tap the suggestion marked **instant**. It replays a recorded agent run at no cost: the numbered trace, the answer and a proposed change.
+3. Tap **Apply to my tour**. The change is scouted with fresh Qloo calls and the route redraws.
+4. Flip **Show receipts**. Every value shows its provenance label and the Q-id of the Qloo request behind it; tap a Q-id to see the request.
+5. Type any artist or comedian in the search box, confirm the **"Did you mean…?"** card, and scout a live tour.
+
+![The fan map lights up: Qloo's hotspots for Big Thief while cities are scored](docs/screenshots/fan-map.png)
 
 ## The problem
 
@@ -41,7 +46,7 @@ Without Qloo there is nothing to rank.
 
 ## How the agent works
 
-![The scout's numbered trace while it works](docs/screenshots/scout-working.png)
+![The scout's numbered trace while it works (a recorded run replaying on a demo)](docs/screenshots/scout-working.png)
 
 ```
 Search ──► describe (Qloo) ──► "Did you mean…?"  (the user confirms the entity)
@@ -91,20 +96,22 @@ Q6   where_popular   GET /v2/insights  filter.type=urn:heatmap, signal.interests
 
 Q8   recommend       GET /v2/insights  filter.type=urn:entity:place, signal.interests.entities=<Big Thief>,
                                        filter.location.query=Burlington, Vermont,
-                                       filter.tags=urn:tag:category:place:live_music_venue, take=4
+                                       filter.tags=urn:tag:category:place:live_music_venue, take=6
      → Monkey House 88 · Radio Bean 87 · ArtsRiot 86 · Nectar's 86   ⇒ Burlington room affinity 88
+       (rooms that are not venues, or more than 18 km out of town, are dropped first: in Albany a
+       farm 20 km away; in the Hudson Valley a heritage railway, which left that city unscored)
 
 Q7–Q14 (same request for each candidate city)
-     → Boston 89 · Albany 89 · Burlington 88 · Northampton 88 · Portland ME 88 · Portland OR 86 · …
+     → Boston 89 · Burlington 88 · Portland ME 88 · Northampton 88 · Albany 88 · Portland OR 86 · Santa Fe 81
        ⇒ stops: the five best, routed Burlington → Albany → Northampton → Boston → Portland ME
 
-Q17  where_popular   GET /v2/insights  filter.type=urn:heatmap, filter.location.query=Burlington, Vermont, take=10
+Q15  where_popular   GET /v2/insights  filter.type=urn:heatmap, filter.location.query=Burlington, Vermont, take=10
      → strongest cell named via OpenStreetMap: Old North End
 
-Q19  recommend       GET /v2/insights  filter.type=urn:entity:artist, signal.location.query=Burlington, Vermont, take=8
+Q18  recommend       GET /v2/insights  filter.type=urn:entity:artist, signal.location.query=Burlington, Vermont, take=8
      → Julia Jacklin (first candidate that is not the act, not a member of it, and not more popular)
 
-Q26  compare_audiences GET /v2/analysis/compare  a=<Big Thief>, b=<Julia Jacklin>
+Q25  compare_audiences GET /v2/analysis/compare  a=<Big Thief>, b=<Julia Jacklin>
      → shared taste tags: Straightforward, Melodic, Folk, Simple Chord Progressions, Post Punk, Alternative Rock
 ```
 
@@ -208,7 +215,7 @@ docker run -p 8080:8080 -v tour-scout-data:/data -e QLOO_API_KEY -e CLAUDE_API_K
 
 **Demo presets** are captured live runs in `public/presets/`. Recapture them with `LLM_PROVIDER=claude npm run presets:capture [slug…]`; a live capture costs 21–29 Qloo requests and one model call per preset.
 
-**Checks:** `npm test` (33 tests: guard, pipeline, routing, scout agent, apply, store, CSV, limits, and adapter tests against recorded live Qloo responses in `tests/fixtures/`), `npm run lint`, `npx tsc --noEmit`, `npm run build`.
+**Checks:** `npm test` (35 tests: guard, pipeline, routing, scout agent, apply, store, CSV, limits, and adapter tests against recorded live Qloo responses in `tests/fixtures/`), `npm run lint`, `npx tsc --noEmit`, `npm run build`.
 
 ## Screens
 
@@ -252,9 +259,9 @@ What a plan does **not** establish:
 - **Coverage varies by country and by act.** Small or very new acts may need emerging-act mode. Arena-scale acts (Qloo popularity ≥ 0.999, e.g. Taylor Swift) still get a plan of where their fans are, but the suggested rooms are clubs and theatres, not arenas, and the plan says so.
 - **New stops get templated text.** Stops added through "Apply" have no model-written text, to keep model spend bounded.
 - **The guard is keyword-based.** It catches the known failure modes but is not exhaustive; provenance labels remain the main safeguard.
-- **Map tiles come from OpenStreetMap's standard tile server**, which suits light demo traffic only. Heavy use would need a tile provider.
+- **Map tiles come from OpenFreeMap's public instance** (free, no key, public use allowed); a heavy production load would self-host the same tiles.
 - **Single instance.** Limits, caches and the scout's state are in-memory per server process; plans persist under `DATA_DIR`.
 
 ## License and credits
 
-[MIT](LICENSE) © 2026 Harsha Shinde. Taste data by [Qloo](https://www.qloo.com). Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors, rendered with [Leaflet](https://leafletjs.com). Fonts: Anton, Inter and JetBrains Mono (Google Fonts). Plan text and the scout agent use [Claude](https://www.anthropic.com/claude).
+[MIT](LICENSE) © 2026 Harsha Shinde. Taste data by [Qloo](https://www.qloo.com). Map: [OpenFreeMap](https://openfreemap.org) © OpenMapTiles, data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors, rendered with [MapLibre GL JS](https://maplibre.org). Fonts: Anton, Barlow and JetBrains Mono (Google Fonts). Plan text and the scout agent use [Claude](https://www.anthropic.com/claude).

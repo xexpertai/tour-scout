@@ -30,7 +30,7 @@
       "id": "route",
       "take": "route",
       "lines": [
-        "Qloo's fan map finds where this audience concentrates across the country.",
+        "Qloo's fan map lights up where this audience concentrates across the country.",
         "Each hotspot is snapped to a touring city, and every city is scored by how strongly these fans favour its live rooms.",
         "For Big Thief, that's a tight New England run."
       ]
@@ -62,14 +62,14 @@
       "id": "proposal",
       "take": "proposal",
       "lines": [
-        "The server checks every proposal against what the scout actually found. Nothing changes until you apply it."
+        "The proposal comes back as a change you can apply. The server checks it against what the scout actually found."
       ]
     },
     {
       "id": "sources",
       "take": "sources",
       "lines": [
-        "Every number links to its Qloo request. Tap a Q-number to see exactly what was asked.",
+        "Flip on receipts, and every value shows the Qloo request behind it.",
         "No credentials and no personal data. Only aggregate taste."
       ]
     },

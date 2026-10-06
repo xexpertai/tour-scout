@@ -15,16 +15,14 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",
-    "leaflet": "^1.9.4",
+    "maplibre-gl": "^5.24.0",
     "next": "16.3.8",
     "ngeohash": "^0.6.4",
     "react": "19.2.8",
-    "react-dom": "19.2.8",
-    "react-leaflet": "^5.0.0"
+    "react-dom": "19.2.8"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
-    "@types/leaflet": "^1.9.22",
     "@types/ngeohash": "^0.6.8",
     "@types/node": "^20",
     "@types/react": "^19",

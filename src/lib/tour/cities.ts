@@ -13,7 +13,7 @@
  *    shortlist, "why not Denver?" and the scout's tools all use this one measure.
  */
 import { geocodeCity } from "../geo.ts";
-import { SNAP_KM, countryOf, findMarket, marketSlug, nearestMarket, type Market } from "../markets.ts";
+import { SNAP_KM, countryOf, distanceKm, findMarket, marketSlug, nearestMarket, type Market } from "../markets.ts";
 import { fanHeatmap, recommend, type QEntity } from "../qloo.ts";
 import { clean, possessive } from "../text.ts";
 import type { Stepper } from "./pipeline.ts";
@@ -39,16 +39,42 @@ export async function placeFor(name: string, snapKm = 25, within?: string): Prom
 export const toVenue = (e: QEntity, evidence: string): VenueRef =>
   ({ entityId: e.id, name: e.name, address: e.address, area: e.area, affinity: e.affinity, evidence });
 
+/**
+ * Places Qloo tags as live-music venues that a booker would not call a room (M0: Albany's top
+ * "venue" was a farm 20 km out of town). Checked against the name only.
+ */
+const NOT_A_ROOM = /\b(farms?|railroad|railway|museum|chapel|church|cathedral|cemetery|winery|vineyard|campground|state park|national park|school|library|hospital|airport|zoo|golf|stadium|amphitheat(?:er|re)|fairgrounds?|resort|hotel|marina)\b/i;
+/** Rooms further than this from the city centre are not "in" the city for a tour stop. */
+export const ROOM_MAX_KM = 18;
+
+/** Drops unlikely venues and rooms outside the city; towns are geocoded once and cached. */
+export async function sanitizeRooms(rooms: QEntity[], place: Place): Promise<{ kept: QEntity[]; dropped: number }> {
+  const kept: QEntity[] = [];
+  for (const room of rooms) {
+    if (NOT_A_ROOM.test(room.name)) continue;
+    const town = room.city?.trim();
+    if (town && place.lat !== undefined && place.lng !== undefined && town.toLowerCase() !== place.name.split(",")[0].toLowerCase()) {
+      const point = await geocodeCity(room.region ? `${town}, ${room.region}` : town);
+      if (point && distanceKm(point, { lat: place.lat, lng: place.lng }) > ROOM_MAX_KM) continue;
+    }
+    kept.push(room);
+  }
+  return { kept, dropped: rooms.length - kept.length };
+}
+
 /** Scores one city by its best room affinity. Undefined when Qloo finds no rooms there. */
 export async function scoreCity(place: Place, ctx: CityContext, step: Stepper, hotspot?: City["hotspot"]): Promise<City | undefined> {
   const r = await step((v) => `${place.name}: best room ${v.entities[0] ? `${clean(v.entities[0].name)} (${Math.round((v.entities[0].affinity ?? 0) * 100)})` : "none found"}`,
-    () => recommend({ targetType: "place", signals: ctx.signals, includeTags: ctx.venueTag ? [ctx.venueTag] : undefined, filterLocation: place.query, limit: 4 }),
+    () => recommend({ targetType: "place", signals: ctx.signals, includeTags: ctx.venueTag ? [ctx.venueTag] : undefined, filterLocation: place.query, limit: 6 }),
     `Rooms in ${place.name} with affinity for ${clean(ctx.who)}`);
   if (!r?.entities.length) return undefined;
-  const best = Math.max(...r.entities.map((e) => e.affinity ?? 0));
+  const { kept, dropped } = await sanitizeRooms(r.entities, place);
+  if (!kept.length) return undefined;
+  const rooms = kept.slice(0, 4);
+  const best = Math.max(...rooms.map((e) => e.affinity ?? 0));
   return {
     entityId: marketSlug(place.name), name: place.name, query: place.query, affinity: best, lat: place.lat, lng: place.lng,
-    evidence: r.source.id, hotspot, rooms: r.entities.map((e) => toVenue(e, r.source.id)),
+    evidence: r.source.id, hotspot, rooms: rooms.map((e) => toVenue(e, r.source.id)), droppedRooms: dropped || undefined,
   };
 }
 
@@ -109,6 +135,8 @@ export async function discoverCities(region: string, want: number, ctx: CityCont
   return {
     cities,
     coverage: {
+      cells: (heat?.cells ?? []).map((c) => ({ lat: +c.lat.toFixed(3), lng: +c.lng.toFixed(3), affinity: +c.affinity.toFixed(4) })),
+      droppedRooms: cities.reduce((n, c) => n + (c.droppedRooms ?? 0), 0) || undefined,
       basis: "hotspots", region, hotspotCells: heat?.cells.length ?? 0, remoteCells, hotspotMarkets: hotspotMarkets.length, roomFallback,
       scored: cities.length, unscored, evidence: heat?.source.id, limited: cities.length < want || !heat?.cells.length,
     },

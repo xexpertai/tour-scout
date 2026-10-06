@@ -137,6 +137,7 @@ export function assemblePlan(input: TourInput, a: PhaseAResult, raw: RawSynthesi
     inputs: { region: input.region, candidateCities: input.candidateCities, stops: input.stops, capacity: input.capacity },
     fan: a.fan,
     stops,
+    candidates: a.cities,
     coverage: a.coverage,
     summary: guard("summary", raw.summary) ?? insightGuard(a.ledger.ids(), true, { capacity: input.capacity, offRoute: offRouteOf(a) }).guard("summary", templateSummary),
     theme: list("theme", raw.theme, 4),

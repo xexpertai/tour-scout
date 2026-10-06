@@ -174,7 +174,7 @@ async function claudeOnce(input: SynthesisInput, onPartial?: PartialHandler): Pr
       return block.input as RawSynthesis;
     } catch (e) {
       // Status and error type only: never prompt, output or credentials.
-      console.warn(JSON.stringify({ event: "llm_error", provider: "claude", model: CLAUDE_MODEL, status: (e as { status?: number }).status, type: (e as Error).name, message: e instanceof LlmError ? e.message : undefined }));
+      console.warn(JSON.stringify({ event: "llm_error", provider: "claude", model: CLAUDE_MODEL, status: (e as { status?: number }).status, type: (e as Error).constructor?.name ?? (e as Error).name, message: String((e as Error).message ?? "").slice(0, 160) }));
       if (e instanceof LlmError) throw e;
       if (e instanceof Anthropic.RateLimitError) throw new LlmError("The AI model's rate limit is reached.", "LLM_QUOTA");
       if (e instanceof Anthropic.AuthenticationError || e instanceof Anthropic.PermissionDeniedError) throw new LlmError("The Claude API key is missing or invalid.", "LLM_CONFIG");

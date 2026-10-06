@@ -53,6 +53,8 @@ export async function applyProposal(plan: TourPlan, followUpIndex: number, out: 
     parentId: plan.id,
     createdAt: new Date().toISOString(),
     stops: ordered.map((s, i) => ({ ...s, order: i + 1, rank: i + 1 })),
+    // Added cities join the ranked list, so every stop still shows its rank among scored cities.
+    candidates: plan.candidates && [...plan.candidates, ...added.map((s) => ({ ...s.city, rooms: undefined })).filter((c) => !plan.candidates!.some((x) => x.name === c.name))],
     inputs: { ...plan.inputs, stops: ordered.length },
     sources: [...plan.sources, ...(plan.followUps ?? []).flatMap((f) => f.sources), ...ledger.sources],
     followUps: (plan.followUps ?? []).map((f, i) => (i === followUpIndex ? { ...f, appliedAs: id } : f)),

@@ -21,17 +21,19 @@
   --sample: #ffc861;
   --sample-bg: #33270f;
   --danger: #ff8a7a;
+  --map-bg: rgb(12, 12, 12);
   color-scheme: dark;
 }
 
 :root[data-theme="light"] {
-  --bg: #f4efe6;
-  --surface: #fffdf8;
-  --surface-2: #ebe4d6;
-  --line: #d6cdbb;
-  --ink: #141418;
-  --muted: #5d5866;
-  --accent: #d24d06;
+  /* Cool poster paper (not cream), with an accent dark enough for small text (≥ 4.5:1). */
+  --bg: #eef0f2;
+  --surface: #ffffff;
+  --surface-2: #e3e6ea;
+  --line: #cfd4da;
+  --ink: #121318;
+  --muted: #535a66;
+  --accent: #b54200;
   --accent-ink: #ffffff;
   --neon: #c8006a;
   --glow: #ff6b1a;
@@ -39,11 +41,12 @@
   --qloo-bg: #d9f2e6;
   --ai: #5b3fd1;
   --ai-bg: #e7e1ff;
-  --general: #5d5866;
-  --general-bg: #e6e0d4;
+  --general: #535a66;
+  --general-bg: #e3e6ea;
   --sample: #8a5a00;
   --sample-bg: #fbe9c2;
   --danger: #b42318;
+  --map-bg: rgb(242, 243, 240);
   color-scheme: light;
 }
 
@@ -95,7 +98,7 @@ body {
 /* Ticket stub: notches cut into both sides at the tear line. */
 .ticket {
   --notch: 11px;
-  --tear: 112px;
+  --tear: 104px;
   -webkit-mask:
     radial-gradient(circle var(--notch) at 0 var(--tear), #0000 98%, #000) left / 51% 100% no-repeat,
     radial-gradient(circle var(--notch) at 100% var(--tear), #0000 98%, #000) right / 51% 100% no-repeat;
@@ -110,72 +113,47 @@ body {
   height: 2px;
 }
 
-/* Map: glowing affinity circles and a route that draws itself. */
-.glow-circle {
-  filter: blur(5px);
-  mix-blend-mode: screen;
-}
-:root[data-theme="light"] .glow-circle {
-  mix-blend-mode: multiply;
-}
-.route-line {
-  stroke: var(--neon);
-  filter: drop-shadow(0 0 4px var(--neon));
-}
-.route-line.drawing {
-  stroke-dasharray: var(--len);
-  stroke-dashoffset: var(--len);
-  animation: draw-route 2.4s ease-out forwards;
-}
-@keyframes draw-route {
-  to {
-    stroke-dashoffset: 0;
-  }
-}
+/* Map (MapLibre): fan heat, candidate scores, numbered stops, scout ghosts. */
+.map-box { background: var(--map-bg); }
+.maplibregl-ctrl-attrib { font-size: 10px; background: color-mix(in srgb, var(--surface) 80%, transparent) !important; color: var(--muted); }
+.maplibregl-ctrl-attrib a { color: var(--ink) !important; }
+.maplibregl-ctrl-attrib-button { filter: var(--attrib-filter, none); }
+.cand .mk { display: flex; align-items: center; gap: 6px; opacity: 0; transform: translateY(4px); transition: opacity .35s ease var(--delay, 0ms), transform .35s ease var(--delay, 0ms); pointer-events: none; }
+.cand.on .mk { opacity: 1; transform: none; }
+.cand-dot { width: 10px; height: 10px; border-radius: 999px; background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent), 0 0 16px var(--glow); }
+.cand-score { font-family: var(--font-display); font-size: 20px; line-height: 1; color: var(--ink); text-shadow: 0 0 6px var(--bg), 0 0 2px var(--bg); font-variant-numeric: tabular-nums; min-width: 1.4em; }
+.cand-name { font-size: 13px; font-weight: 600; color: var(--ink); text-shadow: 0 0 5px var(--bg), 0 0 2px var(--bg), 0 0 1px var(--bg); white-space: nowrap; }
+.cand.won .mk { opacity: 0 !important; }
+.cand.crowded .cand-name { display: none; }
+.cand.crowded .cand-score { font-size: 15px; }
+.cand.lost .mk { opacity: .5; }
+.cand.lost .cand-dot { width: 7px; height: 7px; background: var(--muted); box-shadow: none; }
+.cand.lost .cand-score { font-size: 14px; color: var(--muted); }
+.cand.lost .cand-name { color: var(--muted); }
+.stop .mk { display: flex; align-items: center; gap: 7px; opacity: 0; transform: scale(.5); transition: opacity .3s ease var(--delay, 0ms), transform .45s cubic-bezier(.3,1.6,.5,1) var(--delay, 0ms); }
+.stop.on .mk { opacity: 1; transform: none; }
+.stop.left .mk { flex-direction: row-reverse; }
+.stop.removed .mk { opacity: .35; filter: grayscale(1); }
+.stop-name { font-family: var(--font-display); font-size: 17px; letter-spacing: .01em; text-transform: uppercase; color: var(--ink); white-space: nowrap; text-shadow: 0 0 8px var(--bg), 0 0 3px var(--bg), 0 0 1px var(--bg); pointer-events: none; }
 .stop-pin {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 999px;
-  background: var(--accent);
-  color: var(--accent-ink);
-  font-family: var(--font-mono);
-  font-weight: 700;
-  font-size: 13px;
+  position: relative; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 999px; cursor: pointer;
+  background: var(--accent); color: var(--accent-ink); font-family: var(--font-mono); font-weight: 700; font-size: 13px;
   box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px var(--accent), 0 0 18px var(--glow);
-  animation: pop-in 0.4s ease-out both;
 }
-.stop-pin.active {
-  background: var(--neon);
-  box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px var(--neon), 0 0 22px var(--neon);
+/* 44 px hit area around the 30 px pin. */
+.stop-pin::after { content: ""; position: absolute; inset: -7px; }
+.stop.active .stop-pin { background: var(--neon); box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px var(--neon), 0 0 22px var(--neon); }
+.ghost .mk { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.ghost-ring { width: 20px; height: 20px; border-radius: 999px; border: 2px dashed var(--neon); background: color-mix(in srgb, var(--neon) 15%, transparent); }
+.ghost-ring.new { border-color: #ffd2b0; animation: pulse-ring 1.4s ease-in-out infinite; }
+@keyframes pulse-ring { 50% { transform: scale(1.35); } }
+.map-caption {
+  position: absolute; left: 50%; top: 18px; transform: translate(-50%, 0); opacity: 0; animation: caption-life 4s ease both;
+  font-family: var(--font-display); text-transform: uppercase; font-size: clamp(20px, 2.6vw, 34px); letter-spacing: .01em; white-space: nowrap;
+  color: var(--ink); text-shadow: 0 0 14px var(--bg), 0 0 4px var(--bg); z-index: 5;
 }
-/* Dark map: invert OSM's light tiles into a night palette; markers and overlays are unaffected. */
-.map-dark .leaflet-tile-pane {
-  filter: invert(1) grayscale(1) brightness(0.78) contrast(1.05);
-}
-.leaflet-container {
-  background: var(--bg);
-  font-family: var(--font-sans);
-}
-.leaflet-container .leaflet-control-attribution {
-  font-size: 10px;
-  background: color-mix(in srgb, var(--surface) 85%, transparent);
-  color: var(--muted);
-}
-.leaflet-container .leaflet-control-attribution a {
-  color: var(--ink);
-}
-.leaflet-tooltip {
-  background: var(--surface);
-  color: var(--ink);
-  border: 1px solid var(--line);
-  font-family: var(--font-mono);
-  font-size: 11px;
-}
-.leaflet-tooltip-top::before {
-  border-top-color: var(--line);
-}
+.map-caption.short { animation-duration: 2.8s; }
+@keyframes caption-life { 0% { opacity: 0; transform: translate(-50%, -6px); } 12%, 78% { opacity: 1; transform: translate(-50%, 0); } 100% { opacity: 0; } }
 
 @keyframes pop-in {
   from {
@@ -267,16 +245,20 @@ body {
   details > summary {
     display: none;
   }
+  .print\:block { display: block !important; }
 }
 
-/* Stop names beside the route pins: compact, readable on both basemaps, never clickable. */
-.leaflet-tooltip.stop-label {
-  padding: 1px 6px;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  pointer-events: none;
+/* Landing: poster tape and the looping route preview. */
+.tape::before { content: ""; position: absolute; top: -6px; left: 50%; width: 70px; height: 20px; transform: translateX(-50%) rotate(-3deg); background: rgb(255 255 255 / .55); box-shadow: 0 1px 2px rgb(0 0 0 / .2); }
+.preview .pv-heat { opacity: 0; transform-box: fill-box; transform-origin: center; animation: pv-bloom 1.2s ease-out both; }
+.preview .pv-stop { opacity: 0; transform-box: fill-box; transform-origin: center; animation: pop-in .45s cubic-bezier(.3,1.6,.5,1) both; animation-fill-mode: both; }
+.preview .pv-stop { animation-name: pv-pop; }
+.preview .pv-route { stroke-dasharray: 1; stroke-dashoffset: 1; animation: pv-draw 1.8s ease-in-out 3.2s forwards; filter: drop-shadow(0 0 5px var(--neon)); }
+@keyframes pv-bloom { from { opacity: 0; transform: scale(.3); } to { opacity: .85; transform: none; } }
+@keyframes pv-pop { from { opacity: 0; transform: scale(.4); } to { opacity: 1; transform: none; } }
+@keyframes pv-draw { to { stroke-dashoffset: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .preview .pv-heat { opacity: .85; }
+  .preview .pv-stop { opacity: 1; }
+  .preview .pv-route { stroke-dashoffset: 0; }
 }
-.leaflet-tooltip.stop-label::before { display: none; }

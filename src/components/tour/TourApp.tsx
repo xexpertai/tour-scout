@@ -21,11 +21,12 @@ const headingFor = (input: TourInput): Heading => ({
   sub: `${input.stops} stops · ${input.candidateCities?.length ? "your cities" : input.region ?? ""}`,
   proxyOf: input.emerging?.proxies.map((p) => p.name),
   arenaScale: (input.artist?.popularity ?? 0) >= ARENA_POPULARITY,
+  expectedStops: input.stops,
 });
 
 const presetView = (slug?: string): View | undefined => {
   const p = PRESETS.find((x) => x.slug === slug);
-  return p && { name: "run", preset: p.slug, heading: { name: p.artist, sub: `${p.stops} stops · ${p.region}`, proxyOf: p.soundsLike } };
+  return p && { name: "run", preset: p.slug, heading: { name: p.artist, sub: `${p.stops} stops · ${p.region}`, proxyOf: p.soundsLike, arenaScale: p.stressTest, expectedStops: p.stops } };
 };
 
 /** The whole app: landing → confirm artist → live scouting or a replayed demo. */
@@ -81,7 +82,7 @@ export function TourApp({ initialDemo, sharedPlan }: { initialDemo?: string; sha
         <div className="mx-auto flex h-full max-w-[1600px] items-center justify-between gap-3 px-4 sm:px-6">
           <button type="button" onClick={home} className="font-display text-2xl uppercase tracking-wide">Tour<span className="text-accent">·</span>Scout</button>
           <div className="flex items-center gap-3">
-            <span className="hidden font-mono text-[11px] text-muted sm:inline">Powered by Qloo&apos;s taste graph</span>
+            <span className="hidden text-sm text-muted sm:inline">Built on Qloo&apos;s taste graph</span>
             <ThemeToggle />
           </div>
         </div>
@@ -108,7 +109,7 @@ export function TourApp({ initialDemo, sharedPlan }: { initialDemo?: string; sha
 
       {view.name !== "run" && (
         <footer className="border-t border-line px-4 py-6 text-center font-mono text-[11px] text-muted">
-          Taste data: Qloo · Aggregate audiences only, never individual fans · Map: © OpenStreetMap contributors
+          Taste data: Qloo · Aggregate audiences only, never individual fans · Map: OpenFreeMap © OpenMapTiles, data © OpenStreetMap contributors
         </footer>
       )}
     </div>

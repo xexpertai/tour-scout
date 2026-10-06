@@ -3,6 +3,7 @@ import { clientKey, limitedResponse, take } from "@/lib/limits";
 import { NDJSON_HEADERS, ndjsonStream } from "@/lib/ndjson";
 import { loadPlan, savePlan } from "@/lib/store";
 import { applyingLabel, applyProposal } from "@/lib/tour/apply";
+import { planForRequest, presetScoutAnswer } from "@/lib/tour/sources";
 import type { TourEvent, TourPlan } from "@/lib/tour/types";
 
 export const runtime = "nodejs";
@@ -24,8 +25,18 @@ async function* apply(plan: TourPlan, index: number): AsyncGenerator<TourEvent> 
 /** Applies a stored scout proposal and streams the rebuilt plan. */
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
-  const plan = typeof body.planId === "string" ? await loadPlan(body.planId) : undefined;
-  const index = Number(body.index);
+  let plan = typeof body.planId === "string" ? await loadPlan(body.planId) : undefined;
+  let index = Number(body.index);
+  // A recorded preset answer: copy the preset into storage with that answer, then apply it.
+  if (!plan && typeof body.preset === "string" && typeof body.question === "string") {
+    const answer = await presetScoutAnswer(body.preset, body.question);
+    const forked = answer && await planForRequest({ preset: body.preset });
+    if (forked && answer) {
+      plan = { ...forked.plan, followUps: [answer] };
+      await savePlan(plan);
+      index = 0;
+    }
+  }
   if (!plan || !Number.isInteger(index) || !plan.followUps?.[index]?.proposal) return Response.json({ error: "There is no change to apply." }, { status: 404 });
   const limit = take("followup", clientKey(req));
   if (!limit.ok) return limitedResponse(limit);

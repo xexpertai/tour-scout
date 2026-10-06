@@ -44,7 +44,7 @@ The question they need answered is a taste question: *where are the people who l
 
 ### What it does
 
-Type an act, or tap one of four demo flyers that open instantly. Tour Scout then:
+Type an act, or tap one of four demo posters that open instantly. The signature moment: **the fan map lights up**. Qloo's hotspots bloom as heat across the country, the candidate cities get their scores, then the camera eases in and the route draws itself. Tour Scout then:
 
 1. **Confirms the entity.** A "Did you mean…?" card shows the Qloo match before anything runs, because the entity choice changes every later result.
 2. **Finds the fans.** Qloo's country-wide fan map (`where_popular`) returns the act's hotspots, and each one is snapped to a nearby touring city. For Big Thief, the hotspots are the Pioneer Valley, Vermont, Portland ME, Albany, Boston and the Pacific Northwest.
@@ -89,7 +89,7 @@ It also works for **stand-up comedians**: comedy clubs, with club comics as open
   - names a city that isn't on the route.
 
   Withheld items are counted on screen. Citations to non-existent Q-ids are dropped.
-- **Stack:** Next.js 16, React 19, TypeScript, Tailwind 4, Leaflet with OpenStreetMap (Nominatim for neighbourhood names), the Anthropic SDK, Node 22, and Docker for a container host. 33 tests, including adapter tests against recorded live Qloo responses.
+- **Stack:** Next.js 16, React 19, TypeScript, Tailwind 4, MapLibre GL with OpenFreeMap vector tiles (free, no key) and OpenStreetMap's Nominatim for neighbourhood names, the Anthropic SDK, Node 22, and Docker for a container host. 35 tests, including adapter tests against recorded live Qloo responses.
 
 ### Request → result (redacted; live Big Thief tour, US, 5 stops)
 
@@ -152,11 +152,11 @@ Route: Burlington → Albany → Northampton → Boston → Portland ME (shortes
 
 ## Built with
 
-`qloo` · `qloo-harness` · `claude` · `anthropic` · `next.js` · `react` · `typescript` · `tailwindcss` · `node.js` · `leaflet` · `openstreetmap` · `docker` · `render`
+`qloo` · `qloo-harness` · `claude` · `anthropic` · `next.js` · `react` · `typescript` · `tailwindcss` · `node.js` · `maplibre` · `openfreemap` · `openstreetmap` · `docker` · `render`
 
 ## Try it out
 
-- Demo: `<DEMO_URL>`. Tap a demo flyer for an instant captured run, or type any artist or comedian for a live run (rate-limited).
+- Demo: `<DEMO_URL>`. Tap a demo poster for an instant captured run (its scout suggestion marked "instant" also replays at no cost), or type any artist or comedian for a live run (rate-limited).
 - Code: `<REPO_URL>` (MIT)
 - Video (optional): `<VIDEO_URL>`
 
@@ -164,7 +164,9 @@ Route: Burlington → Albany → Northampton → Boston → Portland ME (shortes
 
 1. `route.png`: Big Thief's New England route with stop tickets
 2. `route-comedian.png`: Mark Normand, stand-up
-3. `scout-answer.png`: the scout's answer with Q-ids
+3. `scout-answer.png`: the scout's recorded answer and proposed change
+8. `fan-map.png`: the fan map lighting up (hotspots while cities are scored)
+9. `receipts.png`: "Show receipts" on, every value with its Q-id
 4. `route-emerging.png`: an emerging act planned from "sounds like" artists
 5. `route-arena.png`: the arena-scale test with its caveat
 6. `mobile-ticket.png`: a stop ticket on a phone
@@ -174,8 +176,8 @@ Route: Burlington → Albany → Northampton → Boston → Portland ME (shortes
 
 | Criterion | What judges see |
 | --- | --- |
-| Technological implementation | Official Qloo harness workflows; two-phase agent with streaming; tool-using scout with server-validated proposals; deterministic guard; 33 tests against recorded live responses |
-| Design | Gig-poster UI; route map that draws itself; stop tickets; mobile-first layout; provenance chips that read without hover; instant demo flyers |
+| Technological implementation | Official Qloo harness workflows; two-phase agent with streaming; tool-using scout with server-validated proposals; deterministic guard; 35 tests against recorded live responses |
+| Design | The fan map lighting up, then the route drawing itself; gig-poster UI; compact stop tickets; mobile-first layout with a scout bottom sheet; provenance as quiet dots with a "Show receipts" switch; instant demo flyers |
 | Potential impact | A real, underserved user (indie acts and comedians without data teams); useful from the first tap; extends to promoters and bookers |
 | Quality of the idea | A taste question ("where are the people who like this act?") that only Qloo's cross-domain graph answers, turned into an action (a route, rooms, openers and a pitch) |
 

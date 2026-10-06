@@ -152,7 +152,7 @@ export function scriptedAgentModel(plan: TourPlan, question: string): AgentModel
       const parts = [
         swap ? `${best.city} scores ${best.score} out of 100, above ${clean(weakest.city.name)} (${weakScore}), so swapping it in strengthens the route.`
           : best ? `${best.city} scores ${best.score}, which does not beat your current stops, so the route stays as is.` : "No stronger city came up in this region.",
-        opener ? `For ${clean((named ?? plan.stops[0]).city.name)}, ${clean(opener.name)} is a possible opener (${opener.score}).` : "",
+        opener ? `For ${clean((named ?? plan.stops[0]).city.name)}, ${clean(opener.name)} is a possible opener (artist affinity ${opener.artist_affinity_with_these_fans}).` : "",
       ].filter(Boolean);
       return {
         calls: [{ id: id(0), name: "propose_change", input: {
@@ -188,7 +188,7 @@ function planBrief(plan: TourPlan, question: string): string {
     request: question,
     act: { name: clean(plan.artist.name), type: plan.artist.type, sounds_like: plan.artist.proxyOf?.map(clean) },
     region: plan.inputs.region ?? null,
-    stops: plan.stops.map((s) => ({ stop_id: s.stopId, order: s.order, city: clean(s.city.name), score: score(s.city.affinity), fan_hotspot: Boolean(s.city.hotspot), opener: s.opener ? clean(s.opener.name) : null })),
+    stops: plan.stops.map((s) => ({ stop_id: s.stopId, order: s.order, city: clean(s.city.name), room_affinity: score(s.city.affinity), fan_hotspot: Boolean(s.city.hotspot), opener: s.opener ? clean(s.opener.name) : null })),
   });
 }
 
@@ -282,7 +282,7 @@ export async function runScout(plan: TourPlan, question: string, model: AgentMod
         const fits = others.filter((e) => cap === undefined || (e.popularity ?? 0) <= cap);
         const openers = fits.length ? fits : others;
         for (const e of openers) seenOpeners.set(e.id, { entityId: e.id, name: e.name, affinity: e.affinity, evidence: r.source.id });
-        return { evidence_id: r.source.id, city, openers: openers.map((e) => ({ entity_id: e.id, name: clean(e.name), score: score(e.affinity) })) };
+        return { evidence_id: r.source.id, city, openers: openers.map((e) => ({ entity_id: e.id, name: clean(e.name), artist_affinity_with_these_fans: score(e.affinity) })), note: "artist_affinity is how strongly these fans like that act, not a room score" };
       }
       case "audience_overlap": {
         const opener = seenOpeners.get(String(i.entity_id));

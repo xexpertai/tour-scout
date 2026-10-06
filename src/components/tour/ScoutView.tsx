@@ -2,15 +2,17 @@
 
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
-import { InsightText, Section, Writing, clean, fitDisplay, shortDate } from "./atoms";
+import { InsightText, ProvenanceLegend, ReceiptsContext, ReceiptsToggle, Section, Writing, clean, fitDisplay, shortDate } from "./atoms";
 import { downloadCsv } from "./exportCsv";
-import { ScoutPanel } from "./FollowUps";
+import { ScoutDock } from "./FollowUps";
 import { Activity, CoverageNote, CreditsRoll, FanLineup, ShowIdeas, WithheldNote } from "./PlanSections";
 import { StopTicket } from "./Ticket";
+import { distanceKm } from "@/lib/markets";
 import type { RunState } from "./useTourRun";
-import type { MapCity, MapGhost, MapStop } from "./TourMap";
+import type { MapCity, MapGhost, MapProposal, MapStop } from "./TourMap";
 
-const TourMap = dynamic(() => import("./TourMap"), { ssr: false, loading: () => <div className="skeleton h-full w-full rounded-none" /> });
+// The map paints its own basemap colour at once (no grey skeleton); MapLibre fills it in moments later.
+const TourMap = dynamic(() => import("./TourMap"), { ssr: false, loading: () => <div className="map-box h-full w-full" /> });
 
 const ERROR_TITLES: Record<string, string> = {
   QLOO_RATE_LIMIT: "Qloo is rate-limiting us",
@@ -22,23 +24,30 @@ const ERROR_TITLES: Record<string, string> = {
   TOUR_NO_CITIES: "Qloo found no cities with matching rooms for this act and region",
 };
 
-export type Heading = { name: string; sub: string; proxyOf?: string[]; arenaScale?: boolean };
-
-function Badge({ children, tone = "plain" }: { children: React.ReactNode; tone?: "plain" | "sample" | "live" }) {
-  const cls = { plain: "border-line text-muted", sample: "border-sample text-sample", live: "border-qloo text-qloo" }[tone];
-  return <span className={`inline-flex items-center rounded-full border px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-wider ${cls}`}>{children}</span>;
-}
+export type Heading = { name: string; sub: string; proxyOf?: string[]; arenaScale?: boolean; expectedStops?: number };
 
 const llmLabel = (llm?: string) =>
-  !llm ? undefined : llm.startsWith("scripted") ? (llm.includes("fallback") ? "Text: templated (AI unavailable)" : "Text: templated, no AI") : `Text: ${llm === "claude" ? "Claude" : llm === "gemini" ? "Gemini" : llm}`;
+  !llm ? undefined : llm.startsWith("scripted") ? (llm.includes("fallback") ? "templated text (AI unavailable)" : "templated text, no AI") : `text by ${llm === "claude" ? "Claude" : llm === "gemini" ? "Gemini" : llm}`;
 
-function Toolbar({ state }: { state: RunState }) {
+/** One quiet line saying where the data came from: captured, shared or live; Qloo or sample; who wrote the text. */
+function SourceLine({ state }: { state: RunState }) {
+  const o = state.origin;
+  const sample = state.qloo === "mock";
+  const when = o?.kind === "preset" ? `Captured from live Qloo data on ${shortDate(o.capturedAt)}` : o?.kind === "shared" ? `Shared plan from live Qloo data, ${shortDate(o.createdAt)}`
+    : o?.kind === "reused" ? `Same tour planned earlier (${shortDate(o.createdAt)}), live Qloo data` : "Live Qloo data";
+  return (
+    <p className="text-sm text-muted">
+      {sample ? <span className="font-semibold text-sample">Sample data, no Qloo key</span> : <><span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-qloo align-middle" />{when}</>}
+      {llmLabel(state.llm) && <> · {llmLabel(state.llm)}</>}
+    </p>
+  );
+}
+
+/** Share, CSV and print under one menu, so three outlined buttons don't sit above the fold. */
+function ExportMenu({ state }: { state: RunState }) {
   const [shared, setShared] = useState<string>();
   const plan = state.plan!;
-  const link = () => {
-    if (state.origin?.kind === "preset") return `${window.location.origin}/?demo=${state.origin.slug}`;
-    return `${window.location.origin}/t/${plan.id}`;
-  };
+  const link = () => (state.origin?.kind === "preset" ? `${window.location.origin}/?demo=${state.origin.slug}` : `${window.location.origin}/t/${plan.id}`);
   const share = async () => {
     const url = link();
     const title = `${clean(plan.artist.name)} · Tour Scout`;
@@ -47,13 +56,16 @@ function Toolbar({ state }: { state: RunState }) {
       else { await navigator.clipboard.writeText(url); setShared("Link copied"); setTimeout(() => setShared(undefined), 2000); }
     } catch { /* the visitor cancelled the share sheet */ }
   };
-  const btn = "min-h-11 rounded-full border border-line px-4 font-mono text-xs uppercase tracking-wider hover:border-accent";
+  const item = "block min-h-11 w-full px-4 py-2.5 text-left text-sm hover:bg-surface-2";
   return (
-    <div className="no-print flex flex-wrap gap-2">
-      <button type="button" onClick={share} className={btn}>{shared ?? "Share"}</button>
-      <button type="button" onClick={() => downloadCsv(plan)} className={btn}>CSV</button>
-      <button type="button" onClick={() => window.print()} className={btn}>Print / PDF</button>
-    </div>
+    <details className="no-print relative">
+      <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-full border border-line px-4 text-sm hover:border-accent">{shared ?? "Share & export"} <span aria-hidden>▾</span></summary>
+      <div className="absolute left-0 z-30 mt-1 w-52 overflow-hidden rounded-xl border border-line bg-surface shadow-xl">
+        <button type="button" onClick={share} className={item}>Copy share link</button>
+        <button type="button" onClick={() => downloadCsv(plan)} className={item}>Download CSV</button>
+        <button type="button" onClick={() => window.print()} className={item}>Print / PDF</button>
+      </div>
+    </details>
   );
 }
 
@@ -68,6 +80,8 @@ export function ScoutView({ state, heading, onRetry, onRerunLive, onAsk, onApply
   // Mobile: the sticky map shrinks once the visitor scrolls into the plan; "Expand" brings it back.
   const [compact, setCompact] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [receipts, setReceipts] = useState(false);
+  const [sheet, setSheet] = useState(false);
   useEffect(() => {
     const onScroll = () => setCompact(window.scrollY > 160);
     window.addEventListener("scroll", onScroll, { passive: true });
@@ -81,14 +95,26 @@ export function ScoutView({ state, heading, onRetry, onRerunLive, onAsk, onApply
     .map((c) => ({ id: c.entityId, name: c.name, lat: c.lat!, lng: c.lng!, affinity: c.affinity })), [state.cities]);
 
   const ghosts: MapGhost[] = useMemo(() => state.followUps.flatMap((f, i) => f.pins.map((p) => ({ key: `${i}-${p.name}`, name: p.name, lat: p.lat, lng: p.lng, affinity: p.affinity, target: `ask-${i}` }))), [state.followUps]);
+  // The newest unapplied proposal is previewed on the map: removed stops fade, added cities pulse.
+  const pending = [...state.followUps].reverse().find((f) => f.proposal && !f.appliedAs)?.proposal;
+  const proposal: MapProposal | undefined = useMemo(() => pending && {
+    add: pending.add.filter((c) => c.lat !== undefined && c.lng !== undefined).map((c) => ({ name: c.name, lat: c.lat!, lng: c.lng! })),
+    remove: pending.remove,
+  }, [pending]);
+  const ranked = useMemo(() => [...state.cities].sort((a, b) => b.affinity - a.affinity).map((c) => clean(c.name)), [state.cities]);
+  const rankOf = (name: string) => { const i = ranked.indexOf(clean(name)); return i >= 0 ? i + 1 : undefined; };
   const onRoute = (name: string) => ordered.some((s) => clean(s.city.name).toLowerCase() === clean(name).toLowerCase());
   const offRoute = [...state.cities].sort((a, b) => b.affinity - a.affinity).find((c) => !onRoute(c.name));
   const weakest = [...ordered].sort((a, b) => a.city.affinity - b.city.affinity)[0];
+  const recordedQ = state.origin?.kind === "preset" ? state.recordedScout?.question : undefined;
   const suggestions = [
-    "Swap the weakest stop for a stronger city",
-    ordered[0] ? `Who's a good opener in ${clean(ordered[0].city.name)} with crossover fans?` : "",
-    ordered.length > 3 ? `Make it a ${ordered.length - 1}-stop run` : "",
-  ].filter(Boolean);
+    ...(recordedQ ? [{ text: recordedQ, recorded: true }] : []),
+    ...[
+      "Swap the weakest stop for a stronger city",
+      ordered[0] && !heading.arenaScale ? `Who's a good opener in ${clean(ordered[0].city.name)} with crossover fans?` : "",
+      ordered.length > 3 ? `Make it a ${ordered.length - 1}-stop run` : "",
+    ].filter((t) => t && t !== recordedQ).map((text) => ({ text })),
+  ];
   const placeholder = offRoute ? `Why not ${clean(offRoute.name)}?` : weakest ? `Find something stronger than ${clean(weakest.city.name)}` : "Ask about another city";
 
   // Highlight the ticket in view so the map and the switcher follow the scroll.
@@ -115,41 +141,44 @@ export function ScoutView({ state, heading, onRetry, onRerunLive, onAsk, onApply
     setFocusId(id);
     document.getElementById(`stop-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
-  const sample = state.qloo === "mock";
   const origin = state.origin;
 
+  const located = ordered.filter((s) => s.city.lat !== undefined && s.city.lng !== undefined);
+  const routeKm = located.slice(1).reduce((sum, s, i) => sum + distanceKm({ lat: located[i].city.lat!, lng: located[i].city.lng! }, { lat: s.city.lat!, lng: s.city.lng! }), 0);
+  const dock = { followUps: state.followUps, scout: state.scout, onAsk, onApply, suggestions, placeholder, replayed: state.replayedAnswers ?? [] };
+  const stopNames = ordered.map((s) => clean(s.city.name));
+
   return (
+    <ReceiptsContext.Provider value={{ on: receipts, toggle: () => setReceipts((r) => !r) }}>
     <div className="lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
-      <div className={`print-map sticky top-14 z-10 border-b border-line transition-[height] duration-300 lg:h-[calc(100dvh-3.5rem)] lg:border-b-0 lg:border-r ${expanded ? "h-[60vh]" : compact ? "h-[28vh]" : "h-[45vh]"}`}>
-        <TourMap cities={mapCities} stops={mapStops} ghosts={ghosts} activeId={activeId} focusId={focusId} onSelect={goTo} />
+      <div className={`print-map sticky top-14 z-10 border-b border-line transition-[height] duration-300 lg:h-[calc(100dvh-3.5rem)] lg:border-b-0 lg:border-r ${expanded ? "h-[60vh]" : compact ? "h-[30vh]" : "h-[46vh]"}`}>
+        <TourMap cities={mapCities} stops={mapStops} cells={state.coverage?.cells} ghosts={ghosts} proposal={proposal} activeId={activeId} focusId={focusId} onSelect={goTo}
+          stopsWanted={state.plan?.stops.length ?? heading.expectedStops} compactPadding={compact} />
         <button type="button" onClick={() => setExpanded(!expanded)} aria-expanded={expanded}
-          className="no-print absolute bottom-6 left-2 z-[1000] min-h-10 rounded-full border border-line bg-bg/90 px-3 font-mono text-[11px] uppercase tracking-wider lg:hidden">
+          className="no-print absolute right-2 top-2 z-[5] min-h-11 rounded-full border border-line bg-bg/90 px-3 text-sm lg:hidden">
           {expanded ? "Shrink map" : "Expand map"}
         </button>
       </div>
 
-      <div className="min-w-0 space-y-10 px-4 pb-28 pt-6 sm:px-6 lg:pb-16">
-        <header className="[container-type:inline-size]">
-          <p className="font-mono text-[11px] uppercase tracking-[0.25em] text-accent">{heading.sub}</p>
-          <h1 className="mt-1 font-display uppercase leading-[0.9]" style={fitDisplay(heading.name, "4.5rem")}>{clean(heading.name)}</h1>
-          {heading.proxyOf?.length ? <p className="mt-2 text-sm text-muted">Emerging act — planned from the fans of {heading.proxyOf.map(clean).join(", ")}.</p> : null}
-          {heading.arenaScale && <p className="mt-2 text-sm text-muted">Arena-scale act: the plan shows where the fans are, but the rooms are the club and theatre rooms this audience favours, not arenas.</p>}
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {origin?.kind === "preset" && <Badge>Cached run · {shortDate(origin.capturedAt)}</Badge>}
-            {origin?.kind === "shared" && <Badge>Shared plan · {shortDate(origin.createdAt)}</Badge>}
-            {origin?.kind === "reused" && <Badge>Same tour planned earlier · {shortDate(origin.createdAt)}</Badge>}
-            {state.qloo && <Badge tone={sample ? "sample" : "live"}>{sample ? "Sample data — no Qloo key" : "Live Qloo data"}</Badge>}
-            {llmLabel(state.llm) && <Badge>{llmLabel(state.llm)}</Badge>}
+      <div className="min-w-0 space-y-10 px-4 pt-6 sm:px-6">
+        <header className="space-y-3 [container-type:inline-size]">
+          <p className="text-sm text-muted">{heading.sub}</p>
+          <h1 className="font-display uppercase leading-[0.9]" style={fitDisplay(heading.name, "4.5rem")}>{clean(heading.name)}</h1>
+          {heading.proxyOf?.length ? <p className="text-sm text-muted">Emerging act, planned from the fans of {heading.proxyOf.map(clean).join(" and ")}.</p> : null}
+          {heading.arenaScale && <p className="rounded-lg border border-line bg-surface px-3 py-2 text-sm"><b>Stress test: what if the act is huge?</b> <span className="text-muted">The plan shows where the fans cluster. Qloo&apos;s room data is club and theatre scale, so no rooms or pitches are suggested.</span></p>}
+          <SourceLine state={state} />
+          <div className="flex flex-wrap items-center gap-2">
+            <ReceiptsToggle />
+            {state.plan && <ExportMenu state={state} />}
+            {origin?.kind === "preset" && onRerunLive && !running && (
+              <button type="button" onClick={onRerunLive} className="no-print min-h-11 px-2 text-sm text-muted underline underline-offset-4 hover:text-ink">Re-run this live</button>
+            )}
           </div>
-          {state.plan && <div className="mt-4"><Toolbar state={state} /></div>}
+          <ProvenanceLegend />
           {origin?.kind === "preset" && (
-            <p className="mt-2 text-xs text-muted">Demo using a public {heading.proxyOf?.length ? "artist comparison" : "name"} and aggregate Qloo data. Not affiliated with or endorsed by {heading.proxyOf?.length ? heading.proxyOf.map(clean).join(" or ") : clean(heading.name)}; pitch emails are sample drafts.</p>
-          )}
-          {origin?.kind === "preset" && onRerunLive && !running && (
-            <button type="button" onClick={onRerunLive} className="no-print mt-2 min-h-11 font-mono text-xs uppercase tracking-wider text-muted underline underline-offset-4 hover:text-ink">Re-run this live</button>
+            <p className="text-xs text-muted">Demo using a public {heading.proxyOf?.length ? "artist comparison" : "name"} and aggregate Qloo data. Not affiliated with or endorsed by {heading.proxyOf?.length ? heading.proxyOf.map(clean).join(" or ") : clean(heading.name)}; pitch emails are sample drafts.</p>
           )}
         </header>
-
         {state.error && (
           <div role="alert" className="rounded-xl border border-danger/50 bg-surface px-4 py-3 text-sm">
             <b className="text-danger">{ERROR_TITLES[state.error.code ?? ""] ?? "Something went wrong"}</b>
@@ -166,42 +195,45 @@ export function ScoutView({ state, heading, onRetry, onRerunLive, onAsk, onApply
         )}
         {state.fallback && <p className="rounded-xl border border-line bg-surface px-4 py-3 text-sm text-muted">AI writing was unavailable ({state.fallback}). The Qloo data is complete; the text below is templated.</p>}
 
-        {(running || state.steps.length > 0) && state.status !== "done" && <Activity steps={state.steps} running={running} />}
+        {(running || state.steps.length > 0) && state.status !== "done" && <Activity steps={state.steps} running={running} replay={origin?.kind === "preset"} />}
 
         <Section title="The route">
-          <div className="mb-5"><CoverageNote coverage={state.coverage} region={state.coverage?.region} /></div>
+          <div className="mb-5"><CoverageNote coverage={state.coverage} region={state.coverage?.region} cities={state.cities} stopNames={stopNames} /></div>
+          {state.plan && located.length > 1 && (
+            <p className="mb-3 text-sm text-muted">{located.length} stops · ≈ {Math.round(routeKm / 10) * 10 >= 1000 ? (Math.round(routeKm / 100) * 100).toLocaleString("en") : Math.round(routeKm / 10) * 10} km between stops in this order (straight line). Fan hotspots drive the cities; check drive times before booking.</p>
+          )}
           {state.summary ? <InsightText item={state.summary} className="mb-5" /> : writing ? <div className="mb-5"><Writing label="Writing the summary…" /></div> : null}
-          <div className="space-y-5">
-            {ordered.map((s) => <StopTicket key={s.stopId} stop={s} active={s.stopId === activeId} writing={running} emerging={Boolean(heading.proxyOf?.length)} />)}
-            {running && ordered.length === 0 && [0, 1].map((i) => <div key={i} className="skeleton h-64 rounded-2xl" />)}
+          <div className="space-y-4">
+            {ordered.map((s) => <StopTicket key={s.stopId} stop={s} active={s.stopId === activeId} writing={running} emerging={Boolean(heading.proxyOf?.length)}
+              arena={Boolean(heading.arenaScale)} rank={rankOf(s.city.name)} of={ranked.length || undefined} />)}
+            {running && ordered.length === 0 && [0, 1].map((i) => <div key={i} className="skeleton h-40 rounded-2xl" />)}
           </div>
         </Section>
 
-        {state.plan && (
-          <div className="no-print">
-            <ScoutPanel followUps={state.followUps} scout={state.scout} onAsk={onAsk} onApply={onApply} suggestions={suggestions} placeholder={placeholder} />
-          </div>
-        )}
         <FanLineup fan={state.fan} proxyOf={heading.proxyOf} />
         {(state.plan || writing) && <ShowIdeas theme={state.plan?.theme ?? []} merch={state.plan?.merch ?? []} risks={state.plan?.risks ?? []} writing={!state.plan} />}
         {state.plan && <WithheldNote withheld={state.plan.withheld} />}
         {state.sources.length > 0 && <CreditsRoll sources={state.sources} />}
+        <div className="h-24 lg:h-6" aria-hidden />
+        {state.plan && <div className="hidden lg:block lg:sticky lg:bottom-0 lg:z-20"><ScoutDock variant="dock" {...dock} /></div>}
       </div>
+      {sheet && state.plan && <ScoutDock variant="sheet" onClose={() => setSheet(false)} {...dock} />}
 
       {ordered.length > 0 && (
         <nav aria-label="Stops" className="no-print fixed inset-x-0 bottom-0 z-[1001] border-t border-line bg-bg/95 px-3 py-2 backdrop-blur lg:hidden">
           <div className="no-scrollbar flex gap-2 overflow-x-auto">
             {ordered.map((s) => (
               <button key={s.stopId} type="button" onClick={() => goTo(s.stopId)} aria-current={s.stopId === activeId}
-                className={`min-h-11 shrink-0 rounded-full border px-4 font-mono text-xs ${s.stopId === activeId ? "border-accent bg-accent text-accent-ink" : "border-line"}`}>
+                className={`min-h-11 shrink-0 rounded-full border px-4 text-sm ${s.stopId === activeId ? "border-accent bg-accent text-accent-ink" : "border-line"}`}>
                 {s.order ?? s.rank} · {clean(s.city.name)}
               </button>
             ))}
-            <a href="#fans" className="grid min-h-11 shrink-0 place-items-center rounded-full border border-line px-4 font-mono text-xs">Fans</a>
-            <a href="#credits" className="grid min-h-11 shrink-0 place-items-center rounded-full border border-line px-4 font-mono text-xs">Credits</a>
+            {state.plan && <button type="button" onClick={() => setSheet(true)} className="grid min-h-11 shrink-0 place-items-center rounded-full bg-neon px-4 text-sm font-semibold text-white">Ask the scout</button>}
+            <a href="#fans" className="grid min-h-11 shrink-0 place-items-center rounded-full border border-line px-4 text-sm">Fans</a>
           </div>
         </nav>
       )}
     </div>
+    </ReceiptsContext.Provider>
   );
 }

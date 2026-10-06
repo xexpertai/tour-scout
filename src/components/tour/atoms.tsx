@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
+import { createContext, useContext, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import type { Insight } from "@/lib/guard";
 
 export const clean = (s: string) => s.replace(/\s*\(sample\)$/, "");
@@ -11,6 +11,39 @@ export const shortDate = (iso: string) => DAY.format(new Date(iso));
 export const isSample = (s: string) => /\(sample\)$/.test(s);
 
 /**
+ * "Show receipts": provenance is always present, but by default it is a coloured dot (with a
+ * screen-reader label); with receipts on, every value shows its label and the Q-ids of the Qloo
+ * requests behind it.
+ */
+export const ReceiptsContext = createContext<{ on: boolean; toggle: () => void }>({ on: true, toggle: () => {} });
+export const useReceipts = () => useContext(ReceiptsContext);
+
+export function ReceiptsToggle() {
+  const { on, toggle } = useReceipts();
+  return (
+    <button type="button" role="switch" aria-checked={on} onClick={toggle}
+      className="no-print inline-flex min-h-11 items-center gap-2.5 rounded-full border border-line px-3.5 text-sm hover:border-qloo">
+      <span aria-hidden className={`relative h-5 w-9 rounded-full transition-colors ${on ? "bg-qloo" : "bg-surface-2"}`}>
+        <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-ink transition-all ${on ? "left-[18px]" : "left-0.5"}`} />
+      </span>
+      Show receipts
+    </button>
+  );
+}
+
+/** One line explaining the dots, shown under the plan header. */
+export function ProvenanceLegend() {
+  const dot = (cls: string) => <span aria-hidden className={`inline-block h-2 w-2 rounded-full ${cls}`} />;
+  return (
+    <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
+      <span className="flex items-center gap-1.5">{dot("bg-qloo")} Qloo data</span>
+      <span className="flex items-center gap-1.5">{dot("bg-ai")} AI text citing Qloo</span>
+      <span className="flex items-center gap-1.5">{dot("bg-general")} template or general</span>
+    </p>
+  );
+}
+
+/**
  * Display-type size that fits the longest word on one line of its container (needs a parent with
  * `container-type: inline-size`). Words never break mid-word; long names just get smaller.
  */
@@ -19,24 +52,30 @@ export function fitDisplay(text: string, max: string): CSSProperties {
   return { fontSize: `min(${max}, calc(100cqw / ${(longest * 0.5).toFixed(2)}))`, overflowWrap: "normal", hyphens: "none" };
 }
 
-/** Qloo affinity shown as 0–100 with a bar and an explainer that works without hover. */
-export function AffinityScore({ value, sample, evidence }: { value: number; sample: boolean; evidence: string }) {
+/**
+ * A city's room affinity (0–100) with its rank among every city Qloo scored for this run, so
+ * close scores (88 vs 89) read as a ranking, not a percentage. The explainer works without hover.
+ */
+export function AffinityScore({ value, sample, evidence, rank, of }: { value: number; sample: boolean; evidence: string; rank?: number; of?: number }) {
   const [open, setOpen] = useState(false);
   const score = Math.round(value * 100);
   return (
-    <div className="relative w-28 shrink-0 text-right">
-      <div className="flex items-center justify-end gap-1.5">
-        <span className="font-mono text-3xl font-bold leading-none">{score}</span>
+    <div className="relative shrink-0 text-right">
+      <div className="flex items-start justify-end gap-1">
+        <span className="font-display text-5xl leading-none tabular-nums">{score}</span>
         <button type="button" aria-expanded={open} aria-label="What is room affinity?" onClick={() => setOpen(!open)}
-          className="no-print grid h-7 w-7 place-items-center rounded-full border border-line font-mono text-xs text-muted hover:text-ink">?</button>
+          className="no-print -mr-2 -mt-2 grid h-11 w-11 place-items-center rounded-full text-muted hover:text-ink">
+          <span aria-hidden className="grid h-6 w-6 place-items-center rounded-full border border-line text-xs">?</span>
+        </button>
       </div>
-      <div className="mt-1.5 h-1.5 rounded-full bg-surface-2"><div className="h-full rounded-full bg-accent" style={{ width: `${score}%` }} /></div>
-      <div className="mt-1 flex items-center justify-end gap-1 font-mono text-[10px] uppercase tracking-wider text-muted">
-        room affinity <Chip kind={sample ? "sample" : "qloo"} /> <Cites ids={[evidence]} />
+      <div className="mt-1 flex items-center justify-end gap-1.5 text-xs text-muted">
+        {rank && of ? <span>#{rank} of {of} cities</span> : <span>room affinity</span>}
+        <Chip kind={sample ? "sample" : "qloo"} /> <Cites ids={[evidence]} />
       </div>
       {open && (
-        <p role="note" className="absolute right-0 top-full z-20 mt-2 w-64 rounded-lg border border-line bg-surface-2 p-3 text-left text-xs leading-relaxed text-ink shadow-xl">
-          Qloo&apos;s affinity (0–100) between the act&apos;s audience, in aggregate, and the best-matching live room in this city. The same measure for every city, so it ranks cities against each other.
+        <p role="note" className="absolute right-0 top-full z-20 mt-2 w-72 rounded-lg border border-line bg-surface-2 p-3 text-left text-xs leading-relaxed text-ink shadow-xl">
+          Room affinity: Qloo&apos;s affinity (0–100) between the act&apos;s audience, in aggregate, and the best-matching live room in this city.
+          Every city is scored the same way, so it ranks cities against each other{rank && of ? ` (this one is #${rank} of ${of})` : ""}.
           It is not a ticket, attendance or sales forecast.
         </p>
       )}
@@ -54,32 +93,49 @@ const CHIP = {
   user: { label: "YOURS", cls: "bg-general-bg text-general", title: "Your own input, not Qloo data" },
 } as const;
 
-/** Provenance label that reads without hover: short mono pill, colour plus text. */
+const DOT: Record<keyof typeof CHIP, string> = { qloo: "bg-qloo", ai: "bg-ai", general: "bg-general", template: "bg-general", osm: "bg-general", sample: "bg-sample", user: "bg-general" };
+
+/**
+ * Provenance: a labelled pill with receipts on; otherwise a small coloured dot that still has a
+ * label for screen readers and a tooltip. Sample data always shows its full label.
+ */
 export function Chip({ kind }: { kind: keyof typeof CHIP }) {
+  const { on } = useReceipts();
   const c = CHIP[kind];
-  return <span title={c.title} className={`inline-flex shrink-0 items-center rounded px-1.5 py-0.5 font-mono text-[10px] font-bold tracking-wider ${c.cls}`}>{c.label}</span>;
+  if (!on && kind !== "sample") {
+    return <span title={c.title} className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full align-middle ${DOT[kind]}`}><span className="sr-only">{c.title}</span></span>;
+  }
+  return <span title={c.title} className={`inline-flex shrink-0 items-center rounded px-1.5 py-0.5 font-mono text-[11px] font-bold tracking-wide ${c.cls}`}>{c.label}</span>;
 }
+
+/** The credits list is folded by default; a Q-id link unfolds it before the browser jumps to the row. */
+const openCredits = () => document.querySelector<HTMLDetailsElement>("#credits details")?.setAttribute("open", "");
 
 /** Evidence ids that jump to the request in the credits roll. */
 export function Cites({ ids }: { ids: string[] }) {
-  if (!ids.length) return null;
+  const { on } = useReceipts();
+  if (!ids.length || !on) return null;
   return (
     <span className="inline-flex flex-wrap items-center gap-1 font-mono text-[11px]">
       {ids.map((id) => (
-        <a key={id} href={`#source-${id}`} className="rounded border border-line px-1 py-0.5 text-muted hover:border-qloo hover:text-qloo">{id}</a>
+        <a key={id} href={`#source-${id}`} onClick={openCredits} className="rounded border border-line px-1 py-0.5 text-muted hover:border-qloo hover:text-qloo">{id}</a>
       ))}
     </span>
   );
 }
 
-export function InsightText({ item, className = "" }: { item: Insight; className?: string }) {
+export function InsightText({ item, className = "", clamp = false }: { item: Insight; className?: string; clamp?: boolean }) {
+  const { on } = useReceipts();
+  const chip = <Chip kind={item.kind === "interpretation" ? "ai" : item.kind} />;
   return (
     <div className={className}>
-      <p className="whitespace-pre-line text-sm leading-relaxed">{item.text}</p>
-      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-        <Chip kind={item.kind === "interpretation" ? "ai" : item.kind} />
-        <Cites ids={item.evidence} />
-      </div>
+      <p className={`whitespace-pre-line text-[15px] leading-relaxed ${clamp ? "line-clamp-2" : ""}`}>{!on && <span className="mr-2 inline-flex align-middle">{chip}</span>}{item.text}</p>
+      {on && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+          {chip}
+          <Cites ids={item.evidence} />
+        </div>
+      )}
     </div>
   );
 }
@@ -89,7 +145,7 @@ export function Writing({ label = "Writing…" }: { label?: string }) {
     <div aria-label={label} className="space-y-2">
       <div className="skeleton h-3 w-11/12" />
       <div className="skeleton h-3 w-9/12" />
-      <p className="font-mono text-[11px] text-muted">{label}</p>
+      <p className="text-xs text-muted">{label}</p>
     </div>
   );
 }

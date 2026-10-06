@@ -4,12 +4,23 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { loadPlan, savePlan } from "../store.ts";
 import { PRESETS, type CapturedRun } from "./presets.ts";
-import type { TourPlan } from "./types.ts";
+import type { FollowUp, TourPlan } from "./types.ts";
+
+async function presetRun(slug: string): Promise<CapturedRun | undefined> {
+  if (!PRESETS.some((p) => p.slug === slug)) return undefined;
+  return JSON.parse(await readFile(path.join(process.cwd(), "public", "presets", `${slug}.json`), "utf8")) as CapturedRun;
+}
 
 async function presetPlan(slug: string): Promise<TourPlan | undefined> {
-  if (!PRESETS.some((p) => p.slug === slug)) return undefined;
-  const run = JSON.parse(await readFile(path.join(process.cwd(), "public", "presets", `${slug}.json`), "utf8")) as CapturedRun;
-  return (run.events.find((e) => (e.event as { type: string }).type === "plan")?.event as { plan: TourPlan } | undefined)?.plan;
+  const run = await presetRun(slug);
+  return (run?.events.find((e) => (e.event as { type: string }).type === "plan")?.event as { plan: TourPlan } | undefined)?.plan;
+}
+
+/** The recorded scout answer bundled with a preset (server-side copy; never taken from a request). */
+export async function presetScoutAnswer(slug: string, question: string): Promise<FollowUp | undefined> {
+  const run = await presetRun(slug);
+  if (!run?.scout || run.scout.question !== question) return undefined;
+  return (run.scout.events.find((e) => (e.event as { type: string }).type === "answer")?.event as { followUp: FollowUp } | undefined)?.followUp;
 }
 
 /**

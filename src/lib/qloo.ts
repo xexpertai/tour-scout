@@ -51,7 +51,7 @@ export type QEntity = {
   id: string; name: string; type?: string; affinity?: number; popularity?: number;
   address?: string; lat?: number; lng?: number; rating?: number; description?: string;
   /** Places only: Qloo's geocode labels (no coordinates on the hackathon API). */
-  city?: string; area?: string;
+  city?: string; area?: string; region?: string;
 };
 export type Venue = QEntity;
 export type Entity = QEntity;
@@ -242,6 +242,7 @@ function toEntity(e: any): QEntity {
     lat: num(geo.latitude) ?? num(geo.lat), lng: num(geo.longitude) ?? num(geo.lon) ?? num(geo.lng),
     rating: num(props.business_rating),
     city: typeof geo.city === "string" ? geo.city : undefined, area: typeof geo.name === "string" ? geo.name : undefined,
+    region: typeof geo.admin1_region === "string" ? geo.admin1_region : undefined,
     description: typeof props.short_description === "string" ? props.short_description : typeof props.description === "string" ? props.description : undefined,
   };
 }
