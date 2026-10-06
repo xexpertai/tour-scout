@@ -1,0 +1,16 @@
+# Upload for Cloud Build (gcloud run deploy --source): what the Dockerfile needs, nothing private.
+.gcloudignore
+.git
+.gitignore
+.env*
+.cache
+.next
+node_modules
+coverage
+graphify-out
+docs/screenshots
+docs/DESIGN_REVIEW.md
+video/
+tests/
+*.tsbuildinfo
+__pycache__/

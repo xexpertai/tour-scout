@@ -1,28 +1,69 @@
-"""Scripted, repeatable screen takes for the demo video. Re-shoot any time the UI or data changes:
-`scripts/video/make-draft.sh <out_dir>`. Needs the app running at BASE with DATA_DIR=<build>/data.
+"""Scripted, repeatable screen takes for the demo video, with layout QA on every take.
 
-The "live" take is the only one that calls an API: it starts one live tour (about 29 Qloo requests;
-run the server with LLM_PROVIDER=scripted to spend nothing on Claude, since its text is never filmed).
-Every other take replays the Big Thief preset and its recorded scout exchange, which cost nothing.
-Nothing on screen shows credentials or personal data.
+Usage: python3 scripts/video/takes.py <build_dir> [base_url]      (FINAL=1 makes QA issues fatal)
 
-Usage: python3 scripts/video/takes.py <build_dir> [base_url]
-Writes <build_dir>/takes/<scene>.(webm|png), <build_dir>/captions/<scene>_<i>.png, takes.json and
-facts.json (the live run's stops, rooms and openers, to check the script's lines against)."""
+Frames are 1920x990: the app in its presentation scale (?video=1, the layout at 125%, rendered natively
+at 1920 px so text stays crisp); the assembled video adds a 90 px
+caption band below, so captions never cover the app. Every narrated action is shown with a visible
+cursor and a click ripple.
+
+Only the "live" take calls an API: it types an act, starts a live tour and leaves after ~2 s of the
+call log, which aborts the run before any model call. Every other take replays the Big Thief preset
+(its recorded scout exchange, and an Apply that makes no Qloo or model call). Nothing on screen
+shows credentials or personal data.
+
+Writes <build_dir>/takes/<scene>.(webm|png), captions/<scene>_<i>.png, takes.json, facts.json and
+qa/layout.json."""
 import json, os, pathlib, re, subprocess, sys, time
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 from playwright.sync_api import sync_playwright
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 BUILD = pathlib.Path(sys.argv[1])
 BASE = sys.argv[2] if len(sys.argv) > 2 else "http://localhost:4518"
+FINAL = os.environ.get("FINAL") == "1"
 CARDS = (ROOT / "scripts/video/cards.html").as_uri()
+CONFIG = json.load(open(ROOT / "scripts/video/config.json"))
 SCENES = json.load(open(ROOT / "video/scenes.json"))["scenes"]
-GAP, TAIL = 0.35, 0.6
+GAP, LEAD, TAIL = 0.25, 0.15, 0.3   # must match assemble.py
+FRAME = {"width": 1920, "height": 990}
+VIDEO = "video=1"          # the app's presentation scale (see src/app/page.tsx)
+DEMO = f"/?demo=us-indie-band&{VIDEO}"
 ACT = {"name": "Big Thief", "stops": "5", "cap": ("300", "900")}
-for d in ("takes", "captions", "raw"):
+for d in ("takes", "captions", "raw", "qa"):
     (BUILD / d).mkdir(parents=True, exist_ok=True)
-state = {}
+QA: dict[str, list[str]] = {}
+
+# A visible cursor and a click ripple, drawn in the page (outside the zoomed root so sizes stay fixed).
+CURSOR_JS = """
+(() => {
+  // React hydration can drop injected nodes, so the cursor is re-added by a watcher. It lives outside
+  // the app's zoomed root, so mouse coordinates map 1:1.
+  const z = () => parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
+  let pos = { x: -100, y: -100 };
+  const ensure = () => {
+    const head = document.head || document.documentElement;
+    if (!document.getElementById('__ripple')) { const st = document.createElement('style'); st.id = '__ripple';
+      st.textContent = '@keyframes __ripple{from{transform:scale(.3);opacity:1}to{transform:scale(1.4);opacity:0}}'; head.appendChild(st); }
+    if (document.body && !document.getElementById('__cursor')) {
+      const c = document.createElement('div'); c.id = '__cursor';
+      c.style.cssText = 'position:fixed;width:30px;height:30px;z-index:2147483647;pointer-events:none';
+      c.innerHTML = '<svg width="30" height="30" viewBox="0 0 24 24"><path d="M4 2l15 9-6.5 1.5L9 19z" fill="#fff" stroke="#0b0b0f" stroke-width="1.6" stroke-linejoin="round"/></svg>';
+      document.body.appendChild(c); place();
+    }
+  };
+  const place = () => { const c = document.getElementById('__cursor'); if (c) { c.style.left = (pos.x / z() - 3) + 'px'; c.style.top = (pos.y / z() - 2) + 'px'; } };
+  // Mouse events report device pixels; fixed elements inside the zoomed root use CSS pixels.
+  addEventListener('mousemove', (e) => { pos = { x: e.clientX, y: e.clientY }; ensure(); place(); }, true);
+  addEventListener('mousedown', (e) => {
+    const r = document.createElement('div'); const x = e.clientX / z(), y = e.clientY / z();
+    r.style.cssText = `position:fixed;left:${x - 24}px;top:${y - 24}px;width:48px;height:48px;border-radius:999px;border:3px solid #ff2e88;z-index:2147483646;pointer-events:none;animation:__ripple .6s ease-out forwards`;
+    document.body.appendChild(r); setTimeout(() => r.remove(), 700);
+  }, true);
+  ensure();
+  setInterval(ensure, 40);
+})();
+"""
 
 
 def dur(wav):
@@ -31,158 +72,242 @@ def dur(wav):
 
 
 def scene_seconds(sc):
-    lines = [dur(BUILD / "audio" / f"{sc['id']}_{i}.wav") for i in range(len(sc["lines"]))]
-    return max(sum(lines) + GAP * (len(lines) - 1) + TAIL, sc.get("minSeconds", 0))
+    # Voice lengths after silence trimming (assemble.py trims the same way and writes the trimmed files).
+    lines = [dur(BUILD / "audio-trim" / f"{sc['id']}_{i}.wav") for i in range(len(sc["lines"]))]
+    return max(LEAD + sum(lines) + GAP * (len(lines) - 1) + TAIL, sc.get("minSeconds", 0))
 
 
-def smooth_to(page, selector, offset=90):
-    page.evaluate("([s, o]) => { const el = document.querySelector(s); if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - o, behavior: 'smooth' }); }", [selector, offset])
+# ---------------------------------------------------------------- page helpers
+def to(page, selector, offset=16, smooth=True):
+    """Scrolls the plan pane (or the page) so the element's top lands `offset` px below the pane's top."""
+    page.evaluate("""([s, o, smooth]) => { const el = document.querySelector(s); if (!el) return;
+      el.style.scrollMarginTop = o + 'px'; el.scrollIntoView({ block: 'start', behavior: smooth ? 'smooth' : 'instant' }); }""", [selector, offset, smooth])
 
 
-def slow_scroll(page, total_px, seconds, steps=30):
-    for _ in range(steps):
-        page.mouse.wheel(0, total_px / steps)
-        page.wait_for_timeout(int(seconds * 1000 / steps))
+def click(page, locator, pause=250):
+    """Moves the visible cursor to the element, then clicks (a ripple shows the click)."""
+    locator.scroll_into_view_if_needed()
+    box = locator.bounding_box()
+    x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+    page.mouse.move(x, y, steps=18)
+    page.wait_for_timeout(pause)
+    page.mouse.down()
+    page.wait_for_timeout(90)
+    page.mouse.up()
+    return x, y
 
 
-DEMO = "/?demo=us-indie-band"
+def highlight(page, selector, on=True):
+    page.evaluate("""([s, on]) => { const el = document.querySelector(s); if (!el) return;
+      el.style.transition = 'box-shadow .35s ease, background .35s ease';
+      el.style.boxShadow = on ? '0 0 0 3px #ff2e88' : ''; el.style.borderRadius = on ? '10px' : ''; }""", [selector, on])
 
 
-def demo_done(page, settle=11500):
-    """Opens the Big Thief preset and waits until its replay and map choreography have finished."""
-    page.goto(BASE + DEMO, wait_until="networkidle")
+# ---------------------------------------------------------------- layout QA
+LAYOUT_JS = (ROOT / "scripts/video/layout-qa.js").read_text().split("\n", 2)[2]
+
+
+def qa(page, scene, moment, need=None):
+    issues = page.evaluate(LAYOUT_JS, need or [])
+    if issues:
+        QA.setdefault(scene, []).extend(f"{moment}: {i}" for i in dict.fromkeys(issues))
+
+
+# ---------------------------------------------------------------- takes
+def demo_done(page, slug="us-indie-band"):
+    page.goto(f"{BASE}/?demo={slug}&{VIDEO}", wait_until="networkidle")
     page.wait_for_selector("text=Credits", timeout=30000)
-    page.wait_for_timeout(settle)
+    page.wait_for_timeout(11000)
+    page.mouse.move(1700, 600)
 
 
 def live_prepare(page):
-    page.goto(BASE + "/", wait_until="networkidle")
-    page.wait_for_timeout(600)
+    page.request.post(f"{BASE}/api/tour/resolve", data={"name": ACT["name"], "kind": "artist"})  # warm cache: no loading frame
+    page.goto(f"{BASE}/?{VIDEO}", wait_until="networkidle")
+    page.mouse.move(1500, 700)
+    page.wait_for_timeout(400)
 
 
 def live_act(page, s):
     t0 = time.monotonic()
-    page.locator("#artist-search").click()
-    page.keyboard.type(ACT["name"], delay=110)
-    page.wait_for_timeout(400)
-    page.get_by_role("button", name="Scout", exact=True).click()
+    click(page, page.locator("#artist-search"), 150)
+    page.keyboard.type(ACT["name"], delay=150)          # ~1.4 s of typing on screen
+    page.wait_for_timeout(450)
+    qa(page, "live", "typed", ["#artist-search"])
+    click(page, page.get_by_role("button", name="Scout", exact=True), 150)
     page.wait_for_selector("text=Did you mean", timeout=30000)
-    page.wait_for_timeout(1300)
+    page.wait_for_timeout(900)                           # the confirm card holds ~1.8 s with the moves below
+    qa(page, "live", "confirm", ["text:Did you mean"])
     page.locator("input[type=range]").fill(ACT["stops"])
-    page.get_by_label("Minimum capacity").fill(ACT["cap"][0])
-    page.get_by_label("Maximum capacity").fill(ACT["cap"][1])
-    page.wait_for_timeout(500)
-    page.get_by_role("button", name="Scout the tour").click()
+    click(page, page.get_by_role("button", name="Scout the tour"), 200)
+    page.wait_for_selector("text=Scouting live", timeout=15000)
+    page.evaluate("""() => { const a = [...document.querySelectorAll('[aria-live=polite]')].find((x) => x.textContent.includes('Scouting live'));
+      if (a) { a.style.transition = 'font-size .4s ease, box-shadow .4s ease'; a.style.fontSize = '1.25em'; a.style.boxShadow = '0 0 0 3px #ff2e88'; } }""")
     left = s - (time.monotonic() - t0)
-    page.wait_for_timeout(int(max(left, 1) * 1000))
+    page.wait_for_timeout(int(max(left, 1.5) * 1000))
+    qa(page, "live", "log", ["text:Scouting live"])
+    # Leaving now aborts the run on the server before its single model call.
 
 
-def route_act(page, s):
-    # Filmed from the first frame: hotspots bloom, scores tick, the camera eases in, the route draws.
+def map_prepare(page):
+    demo_done(page)  # not filmed: caches the map style and tiles so the filmed load is instant
+    page.goto(f"{BASE}/?{VIDEO}", wait_until="networkidle")
+
+
+def map_act(page, s):
     page.goto(BASE + DEMO, wait_until="domcontentloaded")
-    page.wait_for_timeout(int(s * 1000))
+    page.mouse.move(1700, 600)
+    page.wait_for_timeout(int(s * 1000) - 300)
+    qa(page, "map", "end", [".maplibregl-marker.stop.on"])
 
 
-def scout_prepare(page):
+def strip_prepare(page):
     demo_done(page)
-    page.wait_for_timeout(500)
+    to(page, "#plan-scroll section", 8, smooth=False)  # "The route" heading at the top of the pane
+    page.wait_for_timeout(600)
+
+
+def strip_act(page, s):
+    page.wait_for_timeout(int(s * 120))
+    page.evaluate("""() => { const el = document.querySelector("ol[aria-label='Every city scored, best first']");
+      el.style.transition = 'font-size .5s ease, box-shadow .5s ease'; el.style.fontSize = '1.3em';
+      el.style.boxShadow = '0 0 0 3px #ff2e88'; el.style.borderRadius = '10px'; el.style.padding = '8px'; el.style.background = 'var(--surface)'; }""")
+    page.wait_for_timeout(int(s * 880) - 300)
+    qa(page, "strip", "end", ["ol[aria-label='Every city scored, best first']"])
+
+
+def ticket_prepare(page):
+    demo_done(page)
+    to(page, "[data-stop]", 12, smooth=False)
+    page.wait_for_timeout(600)
+
+
+def ticket_act(page, s):
+    # Walk the narration: cluster, rooms, opener (each highlighted in turn).
+    parts = ["[data-stop] p.flex", "[data-stop] h4 + ul", "[data-stop] p.font-display"]
+    for i, sel in enumerate(parts):
+        highlight(page, sel, True)
+        page.wait_for_timeout(int(s * 1000 / len(parts)) - 120)
+        if i == len(parts) - 1:
+            qa(page, "ticket", "end", ["[data-stop]"])
+        highlight(page, sel, False)
+
+
+def pitch_act(page, s):
+    click(page, page.get_by_role("button", name="Pitch email to the booker").first, 150)
+    page.wait_for_timeout(int(s * 1000) - 900)
+    qa(page, "pitch", "end", ["[role=dialog]"])
 
 
 def scout_act(page, s):
-    page.get_by_role("button", name=re.compile("good opener")).first.click()
-    page.wait_for_timeout(int(s * 1000))
+    click(page, page.locator("button:has-text('instant')").first, 150)
+    page.wait_for_timeout(int(s * 1000) - 800)
+    qa(page, "scout", "end", ["#ask ol"])
 
 
-def proposal_prepare(page):
+def apply_prepare(page):
     demo_done(page)
-    page.get_by_role("button", name=re.compile("good opener")).first.click()
+    page.locator("button:has-text('instant')").first.click()
     page.wait_for_selector("text=Apply to my tour", timeout=30000)
-    page.wait_for_timeout(800)
-    page.get_by_role("button", name=re.compile("Apply to my tour")).first.scroll_into_view_if_needed()
     page.wait_for_timeout(500)
+    page.get_by_role("button", name=re.compile("Apply to my tour")).first.scroll_into_view_if_needed()
+    page.mouse.move(1500, 500)
+    page.wait_for_timeout(300)
 
 
-def proposal_act(page, s):
-    page.wait_for_timeout(int(s * 450))
-    page.get_by_role("button", name=re.compile("Apply to my tour")).first.hover()  # hover only: applying spends Qloo quota
-    page.wait_for_timeout(int(s * 550))
+def apply_act(page, s):
+    t0 = time.monotonic()
+    click(page, page.get_by_role("button", name=re.compile("Apply to my tour")).first, 200)
+    page.wait_for_selector("text=Applied", timeout=20000)
+    page.wait_for_timeout(400)
+    page.get_by_role("button", name="Hide answers").click()
+    to(page, "[data-stop]", 12)
+    page.wait_for_timeout(500)
+    highlight(page, "[data-stop] p.font-display", True)
+    page.wait_for_timeout(int(max(s - (time.monotonic() - t0), 1.2) * 1000))
+    qa(page, "apply", "end", ["[data-stop] p.font-display"])
 
 
-def sources_prepare(page):
+def receipts_prepare(page):
     demo_done(page)
-    smooth_to(page, "[data-stop]", 70)
-    page.wait_for_timeout(900)
+    page.evaluate("document.getElementById('plan-scroll').scrollTo(0, 0)")
+    page.wait_for_timeout(400)
 
 
-def sources_act(page, s):
-    page.wait_for_timeout(int(s * 200))
-    page.get_by_role("switch", name="Show receipts").click()
-    page.wait_for_timeout(int(s * 350))
-    page.locator("[data-stop] a[href^='#source-']").first.click()
-    page.wait_for_timeout(int(s * 450))
+def receipts_act(page, s):
+    click(page, page.get_by_role("switch", name="Show receipts"), 120)
+    page.wait_for_timeout(int(s * 280))
+    click(page, page.locator("a[href='#source-Q6']").first, 150)
+    page.wait_for_timeout(500)
+    to(page, "#source-Q6", 12)
+    page.wait_for_timeout(500)
+    click(page, page.locator("#source-Q6 summary").first, 120)
+    to(page, "#source-Q6", 12)
+    page.wait_for_timeout(int(s * 1000 * 0.72) - 2300)
+    qa(page, "receipts", "end", ["#source-Q6 pre"])
 
 
-def presets_prepare(page):
-    # The comedian replay finishes before filming starts, so the scene opens on a drawn route.
-    page.goto(BASE + "/?demo=us-comedian", wait_until="networkidle")
-    page.wait_for_selector("text=Credits", timeout=30000)
-    page.wait_for_timeout(11000)
+def preset_done(slug):
+    return lambda page: demo_done(page, slug)
 
 
-def presets_act(page, s):
-    page.wait_for_timeout(int(s * 520))
-    page.goto(BASE + "/?demo=uk-emerging", wait_until="domcontentloaded")
-    page.wait_for_timeout(int(s * 480))
+def hold_check(scene):
+    def act(page, s):
+        page.wait_for_timeout(int(s * 1000) - 200)
+        qa(page, scene, "end", [".maplibregl-marker.stop.on"])
+    return act
 
 
 TAKES = {
     "live": (live_prepare, live_act),
-    "route": (lambda p: (p.goto(BASE + "/", wait_until="networkidle"), p.wait_for_timeout(400)), route_act),
-    "ticket": (lambda p: (demo_done(p), smooth_to(p, "[data-stop]", 70), p.wait_for_timeout(900)), lambda p, s: slow_scroll(p, 380, s * 0.85)),
-    "pitch": (lambda p: (demo_done(p), smooth_to(p, "[data-stop]", 70), p.wait_for_timeout(800)),
-              lambda p, s: (p.wait_for_timeout(int(s * 250)), p.get_by_role("button", name="Pitch email to the booker").first.click(), p.wait_for_timeout(int(s * 750)))),
-    "scout": (scout_prepare, scout_act),
-    "proposal": (proposal_prepare, proposal_act),
-    "sources": (sources_prepare, sources_act),
-    "presets": (presets_prepare, presets_act),
+    "map": (map_prepare, map_act),
+    "strip": (strip_prepare, strip_act),
+    "ticket": (ticket_prepare, ticket_act),
+    "pitch": (ticket_prepare, pitch_act),
+    "scout": (demo_done, scout_act),
+    "apply": (apply_prepare, apply_act),
+    "receipts": (receipts_prepare, receipts_act),
+    "comedian": (preset_done("us-comedian"), hold_check("comedian")),
+    "emerging": (preset_done("uk-emerging"), hold_check("emerging")),
 }
 
 
 def caption_pngs(browser):
-    page = browser.new_page(viewport={"width": 1366, "height": 768})
+    page = browser.new_page(viewport={"width": 1920, "height": 90})
     for sc in SCENES:
         for i, line in enumerate(sc["lines"]):
             page.goto(f"{CARDS}?card=caption&text={quote(line)}")
-            page.wait_for_timeout(150)
-            page.screenshot(path=str(BUILD / "captions" / f"{sc['id']}_{i}.png"), omit_background=True)
+            page.wait_for_timeout(120)
+            page.screenshot(path=str(BUILD / "captions" / f"{sc['id']}_{i}.png"))
     page.close()
 
 
 def card_png(browser, name, path):
-    page = browser.new_page(viewport={"width": 1366, "height": 768}, device_scale_factor=1)
-    page.goto(f"{CARDS}?card={name}", wait_until="networkidle")
+    page = browser.new_page(viewport=FRAME)
+    params = {"card": name, "by": CONFIG.get("builtBy", ""), "demo": CONFIG.get("demoUrl", ""), "repo": CONFIG.get("repoUrl", "")}
+    page.goto(f"{CARDS}?{urlencode(params)}", wait_until="networkidle")
+    page.evaluate(f"document.documentElement.style.zoom = '{1920 / 1366}'")
     page.wait_for_timeout(600)
+    qa(page, f"card:{name}", "still")
     page.screenshot(path=str(path))
     page.close()
 
 
 def facts():
-    """What the filmed preset shows, to check the script's lines against."""
     run = json.load(open(ROOT / "public/presets/us-indie-band.json"))
     plan = next(e["event"]["plan"] for e in run["events"] if e["event"]["type"] == "plan")
     answer = next(e["event"]["followUp"] for e in run["scout"]["events"] if e["event"]["type"] == "answer")
-    out = {"stops": [{"city": s["city"]["name"], "score": round(s["city"]["affinity"] * 100), "rooms": [v["name"] for v in s["venues"]], "opener": (s.get("opener") or {}).get("name")}
-                     for s in sorted(plan["stops"], key=lambda s: s["order"])],
-           "scout": {"q": run["scout"]["question"], "a": answer["answer"]["text"], "proposal": (answer.get("proposal") or {}).get("summary")}}
+    out = {"stops": [{"city": s["city"]["name"], "score": round(s["city"]["affinity"] * 100, 1), "opener": (s.get("opener") or {}).get("name")} for s in sorted(plan["stops"], key=lambda s: s["order"])],
+           "scout": {"q": run["scout"]["question"], "proposal": (answer.get("proposal") or {}).get("summary")}}
     json.dump(out, open(BUILD / "facts.json", "w"), indent=2)
-    print(json.dumps(out, indent=2))
+    return out
 
 
 def main():
-    # TAKES_ONLY=a,b re-shoots just those takes against the last run's stored plan (no new live run).
+    if FINAL and not (CONFIG.get("demoUrl") and CONFIG.get("repoUrl")):
+        sys.exit("FINAL render refused: set demoUrl and repoUrl in scripts/video/config.json")
     only = set(filter(None, os.environ.get("TAKES_ONLY", "").split(",")))
     meta = json.load(open(BUILD / "takes.json")) if only else {}
-
     with sync_playwright() as pw:
         browser = pw.chromium.launch()
         if not only:
@@ -196,19 +321,19 @@ def main():
                 card_png(browser, take[5:], BUILD / "takes" / f"{sc['id']}.png")
                 meta[sc["id"]] = {"kind": "still", "file": f"takes/{sc['id']}.png", "seconds": seconds}
                 continue
-            size = {"width": 1366, "height": 768}
             raw = BUILD / "raw" / sc["id"]
             raw.mkdir(exist_ok=True)
             for f in raw.glob("*.webm"):
                 f.unlink()
-            ctx = browser.new_context(viewport=size, record_video_dir=str(raw), record_video_size=size, color_scheme="dark", reduced_motion="no-preference")
+            ctx = browser.new_context(viewport=FRAME, record_video_dir=str(raw), record_video_size=FRAME, color_scheme="dark", reduced_motion="no-preference")
+            ctx.add_init_script(CURSOR_JS)
             started = time.monotonic()
             page = ctx.new_page()
             prepare, act = TAKES[take]
             prepare(page)
             lead = time.monotonic() - started
             act(page, seconds)
-            page.wait_for_timeout(400)
+            page.wait_for_timeout(300)
             video = page.video.path()
             ctx.close()
             dest = BUILD / "takes" / f"{sc['id']}.webm"
@@ -217,7 +342,14 @@ def main():
             print("take", sc["id"], f"{seconds:.1f}s lead {lead:.1f}s")
         browser.close()
     json.dump(meta, open(BUILD / "takes.json", "w"), indent=2)
-    facts()
+    json.dump(QA, open(BUILD / "qa" / "layout.json", "w"), indent=2)
+    print("facts", json.dumps(facts()))
+    if QA:
+        print("LAYOUT QA ISSUES:\n" + "\n".join(f"  {k}: {v}" for k, vs in QA.items() for v in vs))
+        if FINAL:
+            sys.exit("FINAL render refused: layout QA issues (see qa/layout.json)")
+    else:
+        print("layout QA: clean")
 
 
 main()

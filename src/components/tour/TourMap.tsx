@@ -73,9 +73,9 @@ function el(html: string, cls: string): HTMLDivElement {
   return d;
 }
 
-export default function TourMap({ cities, stops, cells = [], ghosts = [], proposal, activeId, focusId, onSelect, stopsWanted, compactPadding = false }: {
+export default function TourMap({ cities, stops, cells = [], ghosts = [], proposal, activeId, focusId, onSelect, routeFinal = true }: {
   cities: MapCity[]; stops: MapStop[]; cells?: MapCell[]; ghosts?: MapGhost[]; proposal?: MapProposal;
-  activeId?: string; focusId?: string; onSelect?: (id: string) => void; stopsWanted?: number; compactPadding?: boolean;
+  activeId?: string; focusId?: string; onSelect?: (id: string) => void; routeFinal?: boolean;
 }) {
   const dark = useIsDark();
   const box = useRef<HTMLDivElement>(null);
@@ -84,32 +84,79 @@ export default function TourMap({ cities, stops, cells = [], ghosts = [], propos
   const [stepped, setPhase] = useState<Phase>("idle");
   const markers = useRef(new Map<string, { marker: maplibregl.Marker; node: HTMLDivElement }>());
   const declutterRef = useRef<() => void>(() => {});
+  const fitRef = useRef<{ bounds: maplibregl.LngLatBounds; padding: () => maplibregl.PaddingOptions } | null>(null);
 
   // ---- create the map once
   useEffect(() => {
     if (!box.current) return;
+    // In presentation scale the map is zoomed too: render its canvas at that scale so it stays crisp.
+    const present = Number(document.getElementById("app-root")?.dataset.present) || 1;
     const map = new maplibregl.Map({
+      pixelRatio: (window.devicePixelRatio || 1) * present,
       container: box.current, style: dark ? STYLES.dark : STYLES.light, center: [-96, 39], zoom: isNarrow() ? 2.2 : 2.9,
       attributionControl: false, dragRotate: false, pitchWithRotate: false, cooperativeGestures: true, fadeDuration: 0,
     });
     map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
+    // Start collapsed to the "i" button (the full credit is one tap away and in the credits line).
+    map.once("load", () => map.getContainer().querySelector(".maplibregl-ctrl-attrib")?.classList.remove("maplibregl-compact-show"));
     map.on("style.load", () => { addLayers(map); setReady((n) => n + 1); });
-    // Candidate labels: strongest first; a label that would overlap one already placed shows its dot only.
+    // Label layout: every pin and dot is anchored exactly on its city; its label goes right, left, above
+    // or below, whichever stays inside the pane and clears every pin and every label already placed.
+    // Stops are placed first; a candidate label that fits nowhere is hidden (its dot stays).
     const declutter = () => {
-      const placed: { x: number; y: number }[] = [];
-      const cands = [...markers.current.entries()].filter(([k]) => k.startsWith("cand:")).map(([, m]) => m)
-        .sort((a, b) => Number(b.node.dataset.score) - Number(a.node.dataset.score));
-      for (const m of cands) {
-        const p = map.project(m.marker.getLngLat());
-        const crowded = placed.some((q) => Math.abs(q.x - p.x) < 120 && Math.abs(q.y - p.y) < 26);
-        m.node.classList.toggle("crowded", crowded);
-        if (!crowded) placed.push(p);
+      const W = map.getContainer().clientWidth, H = map.getContainer().clientHeight;
+      type Box = { x: number; y: number; w: number; h: number };
+      const hit = (a: Box, b: Box) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+      const inside = (b: Box) => b.x >= 4 && b.y >= 4 && b.x + b.w <= W - 4 && b.y + b.h <= H - 4;
+      const entries = [...markers.current.entries()];
+      const visible = (k: string, m: { node: HTMLDivElement }) => (k.startsWith("stop:") ? m.node.classList.contains("on") : k.startsWith("cand:") && m.node.classList.contains("on") && !m.node.classList.contains("won"));
+      const live = entries.filter(([k, m]) => visible(k, m));
+      const pinR = (k: string) => (k.startsWith("stop:") ? 19 : 7);
+      // Overlapping stop pins (two cities close together at a wide zoom) are nudged apart just enough
+      // that both numbers read; labels are then placed around the nudged positions.
+      const stopsLive = live.filter(([k]) => k.startsWith("stop:"));
+      const shift = new Map<string, { x: number; y: number }>(stopsLive.map(([k]) => [k, { x: 0, y: 0 }]));
+      const at = (k: string, m: { marker: maplibregl.Marker }) => { const p = map.project(m.marker.getLngLat()); const o = shift.get(k) ?? { x: 0, y: 0 }; return { x: p.x + o.x, y: p.y + o.y }; };
+      for (let pass = 0; pass < 3; pass++) {
+        for (let i = 0; i < stopsLive.length; i++) for (let j = i + 1; j < stopsLive.length; j++) {
+          const [ki, mi] = stopsLive[i], [kj, mj] = stopsLive[j];
+          const a = at(ki, mi), b = at(kj, mj), d = Math.hypot(b.x - a.x, b.y - a.y), need = 40;
+          if (d >= need) continue;
+          const ux = d ? (b.x - a.x) / d : 1, uy = d ? (b.y - a.y) / d : 0, push = (need - d) / 2;
+          shift.get(ki)!.x -= ux * push; shift.get(ki)!.y -= uy * push;
+          shift.get(kj)!.x += ux * push; shift.get(kj)!.y += uy * push;
+        }
+      }
+      for (const [k, m] of stopsLive) { const o = shift.get(k)!; m.marker.setOffset([o.x, o.y]); }
+      const taken: Box[] = live.map(([k, m]) => { const p = at(k, m); const r = pinR(k); return { x: p.x - r, y: p.y - r, w: 2 * r, h: 2 * r }; });
+      const order = [...live].sort(([a, ma], [b, mb]) => (a.startsWith("stop:") === b.startsWith("stop:") ? Number(mb.node.dataset.score ?? 0) - Number(ma.node.dataset.score ?? 0) : a.startsWith("stop:") ? -1 : 1));
+      for (const [k, m] of order) {
+        const label = m.node.querySelector<HTMLElement>(".lbl");
+        if (!label) continue;
+        m.node.classList.remove("crowded"); // a hidden label measures 0 wide; measure it shown
+        const p = at(k, m), r = pinR(k) + 6, w = label.offsetWidth, h = label.offsetHeight;
+        const sides: [string, Box][] = [
+          ["right", { x: p.x + r, y: p.y - h / 2, w, h }],
+          ["left", { x: p.x - r - w, y: p.y - h / 2, w, h }],
+          ...(k.startsWith("stop:") ? [["top", { x: p.x - w / 2, y: p.y - r - h, w, h }], ["bottom", { x: p.x - w / 2, y: p.y + r, w, h }]] as [string, Box][] : []),
+        ];
+        const pick = sides.find(([, b]) => inside(b) && !taken.some((t) => hit(t, b)));
+        for (const side of ["right", "left", "top", "bottom"]) m.node.classList.toggle(`at-${side}`, (pick?.[0] ?? (k.startsWith("stop:") ? sides.find(([, b]) => inside(b))?.[0] ?? "right" : "")) === side);
+        // No free side: the label steps aside (the numbered pin stays; the stop list names every stop).
+        m.node.classList.toggle("crowded", !pick);
+        if (pick) taken.push(pick[1]);
       }
     };
     map.on("moveend", declutter);
     declutterRef.current = declutter;
     mapRef.current = map;
-    const ro = new ResizeObserver(() => map.resize());
+    // When the pane resizes (the mobile map shrinks on scroll), refit the route and re-place labels.
+    const ro = new ResizeObserver(() => {
+      map.resize();
+      const f = fitRef.current;
+      if (f) map.fitBounds(f.bounds, { padding: f.padding(), maxZoom: 8.5, duration: 0 });
+      requestAnimationFrame(() => declutterRef.current());
+    });
     ro.observe(box.current);
     const nodes = markers.current;
     return () => { ro.disconnect(); nodes.forEach((m) => m.marker.remove()); nodes.clear(); map.remove(); mapRef.current = null; };
@@ -124,7 +171,9 @@ export default function TourMap({ cities, stops, cells = [], ghosts = [], propos
   }, [dark]);
 
   // ---- phase machine: advance one phase at a time, never faster than the minimum hold
-  const target: Phase = stops.length && (stops.length >= (stopsWanted ?? 1)) ? "route" : cities.length ? "scoring" : cells.length ? "hotspots" : "idle";
+  // Pins and the route wait for the final route order (it is decided when the plan is assembled), so a
+  // pin is never shown with a number that changes a moment later.
+  const target: Phase = stops.length && routeFinal ? "route" : cities.length ? "scoring" : cells.length ? "hotspots" : "idle";
   const reduce = reducedMotion();
   // Never ahead of the data: a new run (less data) shows its own earlier phase at once.
   const phase: Phase = reduce || ORDER.indexOf(target) < ORDER.indexOf(stepped) ? target : stepped;
@@ -165,29 +214,29 @@ export default function TourMap({ cities, stops, cells = [], ghosts = [], propos
       const key = `cand:${c.id}`;
       live.add(key);
       let m = markers.current.get(key);
-      const score = Math.round(c.affinity * 100);
+      const score = Math.round(c.affinity * 1000) / 10;
       if (!m) {
-        const node = el(`<span class="cand-dot"></span><span class="cand-score">0</span><span class="cand-name">${clean(c.name)}</span>`, "cand");
+        const node = el(`<span class="cand-dot"></span><span class="lbl"><span class="cand-score">0.0</span><span class="cand-name">${clean(c.name)}</span></span>`, "cand");
         node.dataset.score = String(score);
         node.style.setProperty("--delay", `${i * 110}ms`);
-        m = { marker: new maplibregl.Marker({ element: node, anchor: "left", offset: [-6, 0] }).setLngLat([c.lng, c.lat]).addTo(map), node };
+        m = { marker: new maplibregl.Marker({ element: node, anchor: "center" }).setLngLat([c.lng, c.lat]).addTo(map), node };
         markers.current.set(key, m);
       }
       const scoreEl = m.node.querySelector(".cand-score") as HTMLSpanElement;
       if (show && !m.node.classList.contains("on")) {
         m.node.classList.add("on");
-        if (reducedMotion()) scoreEl.textContent = String(score);
+        if (reducedMotion()) scoreEl.textContent = score.toFixed(1);
         else {
           const t0 = performance.now() + i * 110;
           const tick = (now: number) => {
             const k = Math.min(1, Math.max(0, (now - t0) / 750));
-            scoreEl.textContent = String(Math.round(score * (1 - Math.pow(1 - k, 3))));
+            scoreEl.textContent = (score * (1 - Math.pow(1 - k, 3))).toFixed(1);
             if (k < 1) requestAnimationFrame(tick);
           };
           requestAnimationFrame(tick);
         }
       }
-      if (!show) { m.node.classList.remove("on"); scoreEl.textContent = "0"; }
+      if (!show) { m.node.classList.remove("on"); scoreEl.textContent = "0.0"; }
       m.node.classList.toggle("won", phase === "route" && stopNames.has(clean(c.name)));
       m.node.classList.toggle("lost", phase === "route" && !stopNames.has(clean(c.name)));
     });
@@ -202,15 +251,12 @@ export default function TourMap({ cities, stops, cells = [], ghosts = [], propos
     if (!map || !ready) return;
     const live = new Set<string>();
     const show = phase === "route";
-    // Label side: the western one of two close pins puts its name on the left, so names never collide.
-    const px = stops.map((s) => map.project([s.lng, s.lat]));
     stops.forEach((s, i) => {
       const key = `stop:${s.id}`;
       live.add(key);
-      const crowdedEast = stops.some((o, j) => j !== i && Math.hypot(px[j].x - px[i].x, px[j].y - px[i].y) < 140 && px[j].x > px[i].x);
       let m = markers.current.get(key);
       if (!m) {
-        const node = el(`<button type="button" class="stop-pin" aria-label="Stop ${s.order}: ${clean(s.name)}">${s.order}</button><span class="stop-name">${clean(s.name)}</span>`, "stop");
+        const node = el(`<button type="button" class="stop-pin" aria-label="Stop ${s.order}: ${clean(s.name)}">${s.order}</button><span class="lbl stop-name">${clean(s.name)}</span>`, "stop");
         node.querySelector("button")!.addEventListener("click", () => onSelect?.(s.id));
         m = { marker: new maplibregl.Marker({ element: node, anchor: "center" }).setLngLat([s.lng, s.lat]).addTo(map), node };
         markers.current.set(key, m);
@@ -218,18 +264,22 @@ export default function TourMap({ cities, stops, cells = [], ghosts = [], propos
       m.marker.setLngLat([s.lng, s.lat]);
       (m.node.querySelector(".stop-pin") as HTMLElement).textContent = String(s.order);
       m.node.classList.toggle("on", show);
-      m.node.classList.toggle("left", crowdedEast);
       m.node.style.setProperty("--delay", `${i * 120}ms`);
     });
     for (const [key, m] of markers.current) if (key.startsWith("stop:") && !live.has(key)) { m.marker.remove(); markers.current.delete(key); }
-    if (!show || !map.getSource("route")) { (map.getSource("route") as GeoJSONSource | undefined)?.setData(fc([])); return; }
+    if (!show || !map.getSource("route")) { fitRef.current = null; (map.getSource("route") as GeoJSONSource | undefined)?.setData(fc([])); return; }
 
     const pts = stops.map((s) => [s.lng, s.lat] as [number, number]);
     const b = boundsOf(stops);
-    // Room for the city names beside the pins (names go left or right of a pin).
-    const padding = isNarrow() ? { top: 52, bottom: compactPadding ? 40 : 34, left: 92, right: 112 } : { top: 80, bottom: 70, left: 130, right: 150 };
+    // Room for the city names around the pins; scaled down when the pane is short (the compact mobile map).
+    const paddingFor = () => {
+      const h = map.getContainer().clientHeight, k = Math.min(1, h / 400);
+      return isNarrow() ? { top: 44 * k + 8, bottom: 40 * k + 8, left: 92, right: 112 } : { top: 80, bottom: 70, left: 130, right: 150 };
+    };
+    const padding = paddingFor();
     const reduce = reducedMotion();
-    if (b) map.fitBounds(b, { padding, maxZoom: 8.5, duration: reduce ? 0 : 1500, essential: false });
+    if (b) { fitRef.current = { bounds: b, padding: paddingFor }; map.fitBounds(b, { padding, maxZoom: 8.5, duration: reduce ? 0 : 1500, essential: false }); }
+    requestAnimationFrame(() => declutterRef.current());
     const src = map.getSource("route") as GeoJSONSource;
     if (reduce || pts.length < 2) { src.setData(fc(pts.length > 1 ? [line(pts)] : [])); return; }
     // Draw the line along its length after the camera settles.

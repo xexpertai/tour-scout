@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // A bare function expression evaluated inside the page by Playwright, not a module.
+    "scripts/video/layout-qa.js",
+    // The Remotion video project has its own package and tsconfig (and generated data).
+    "video/remotion/**",
   ]),
 ]);
 

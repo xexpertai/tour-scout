@@ -58,7 +58,7 @@ export function fitDisplay(text: string, max: string): CSSProperties {
  */
 export function AffinityScore({ value, sample, evidence, rank, of }: { value: number; sample: boolean; evidence: string; rank?: number; of?: number }) {
   const [open, setOpen] = useState(false);
-  const score = Math.round(value * 100);
+  const score = score1(value);
   return (
     <div className="relative shrink-0 text-right">
       <div className="flex items-start justify-end gap-1">
@@ -124,12 +124,28 @@ export function Cites({ ids }: { ids: string[] }) {
   );
 }
 
-export function InsightText({ item, className = "", clamp = false }: { item: Insight; className?: string; clamp?: boolean }) {
+/** City scores to one decimal: Qloo's affinities differ in the first decimal (88.4 vs 88.9). */
+export const score1 = (v: number) => (Math.round(v * 1000) / 10).toFixed(1);
+
+/** The first complete sentence (never cut mid-sentence), and whether more text follows. */
+export function firstSentence(text: string): { head: string; more: boolean } {
+  const m = text.match(/^[\s\S]*?[.!?](?=\s+[A-Z0-9"“(]|\s*$)/);
+  const head = (m ? m[0] : text).trim();
+  return { head, more: head.length < text.trim().length };
+}
+
+/** Model or template text with its provenance. `brief` shows only the first full sentence, with "Read more". */
+export function InsightText({ item, className = "", brief = false }: { item: Insight; className?: string; brief?: boolean }) {
   const { on } = useReceipts();
+  const [full, setFull] = useState(false);
   const chip = <Chip kind={item.kind === "interpretation" ? "ai" : item.kind} />;
+  const { head, more } = firstSentence(item.text);
+  const text = brief && !full ? head : item.text;
   return (
     <div className={className}>
-      <p className={`whitespace-pre-line text-[15px] leading-relaxed ${clamp ? "line-clamp-2" : ""}`}>{!on && <span className="mr-2 inline-flex align-middle">{chip}</span>}{item.text}</p>
+      <p className="whitespace-pre-line text-[15px] leading-relaxed">{!on && <span className="mr-2 inline-flex align-middle">{chip}</span>}{text}
+        {brief && more && <button type="button" onClick={() => setFull(!full)} className="no-print ml-1.5 text-sm text-muted underline underline-offset-4 hover:text-ink">{full ? "Less" : "Read more"}</button>}
+      </p>
       {on && (
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           {chip}

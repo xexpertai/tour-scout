@@ -3,7 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import type { Candidate } from "@/lib/tour/resolve";
 import type { ArtistKind, ArtistRef, TourInput } from "@/lib/tour/types";
-import { Chip, clean, isSample } from "./atoms";
+import { Chip, clean, firstSentence, isSample } from "./atoms";
 
 type Resolved = { status: "resolved" | "ambiguous" | "not_found"; candidates: Candidate[] };
 const REGIONS = ["United States", "United Kingdom", "Canada", "Australia", "Germany", "India"];
@@ -22,7 +22,7 @@ function CandidateRow({ c, selected, onSelect }: { c: Candidate; selected: boole
       className={`flex min-h-14 w-full items-center justify-between gap-3 rounded-xl border px-4 py-3 text-left ${selected ? "border-accent bg-surface-2" : "border-line hover:border-muted"}`}>
       <span className="min-w-0">
         <span className="block font-display text-xl uppercase leading-tight [overflow-wrap:normal]">{clean(c.name)}</span>
-        {c.description && <span className="block truncate text-xs text-muted">{c.description}</span>}
+        {c.description && <span className="line-clamp-2 block text-xs text-muted">{firstSentence(c.description).head}</span>}
       </span>
       <span className="flex shrink-0 flex-col items-end gap-1">
         {c.popularity !== undefined && <span className="font-mono text-xs text-muted">popularity {Math.round(c.popularity * 100)}</span>}

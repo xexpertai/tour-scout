@@ -49,3 +49,6 @@ next-env.d.ts
 
 # video build output (scripts/video/make-draft.sh)
 /video/out/
+
+# python bytecode
+__pycache__/

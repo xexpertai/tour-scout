@@ -30,7 +30,7 @@ const presetView = (slug?: string): View | undefined => {
 };
 
 /** The whole app: landing → confirm artist → live scouting or a replayed demo. */
-export function TourApp({ initialDemo, sharedPlan }: { initialDemo?: string; sharedPlan?: TourPlan }) {
+export function TourApp({ initialDemo, sharedPlan, present }: { initialDemo?: string; sharedPlan?: TourPlan; present?: number }) {
   const { state, start, replay, reset, ask, applyChange } = useTourRun(sharedPlan);
   const router = useRouter();
   const [view, setView] = useState<View>(() =>
@@ -77,7 +77,10 @@ export function TourApp({ initialDemo, sharedPlan }: { initialDemo?: string; sha
     : view.name === "run" ? view.heading : undefined;
 
   return (
-    <div className="grain min-h-dvh">
+    // Presentation scale is part of React's own markup, so hydration never drops it. --app-h keeps
+    // full-height panes inside the viewport when the layout is zoomed.
+    <div id="app-root" className="grain min-h-[var(--app-h,100dvh)] data-[present]:overflow-clip" data-present={present ? String(present) : undefined}
+      style={present ? ({ zoom: present, "--app-h": `calc(100dvh / ${present})` } as React.CSSProperties) : undefined}>
       <header className="no-print sticky top-0 z-[1002] h-14 border-b border-line bg-bg/90 backdrop-blur">
         <div className="mx-auto flex h-full max-w-[1600px] items-center justify-between gap-3 px-4 sm:px-6">
           <button type="button" onClick={home} className="font-display text-2xl uppercase tracking-wide">Tour<span className="text-accent">·</span>Scout</button>

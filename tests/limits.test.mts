@@ -28,3 +28,17 @@ test("identical runs are reused for 24 hours", () => {
   assert.equal(runCache.get("k", 23 * 3600_000), "plan-1");
   assert.equal(runCache.get("k", 25 * 3600_000), undefined);
 });
+
+test("the README's limits match the code defaults and the hosted-demo values in deploy/cloudrun.env.yaml", async () => {
+  const { readFileSync } = await import("node:fs");
+  const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
+  const yaml = readFileSync(new URL("../deploy/cloudrun.env.yaml", import.meta.url), "utf8");
+  const limits = readFileSync(new URL("../src/lib/limits.ts", import.meta.url), "utf8");
+  const llm = readFileSync(new URL("../src/lib/llm.ts", import.meta.url), "utf8");
+  const hosted = (key: string) => yaml.match(new RegExp(`^${key}: "(\\d+)"`, "m"))?.[1];
+  const dflt = (key: string) => (limits.match(new RegExp(`env\\.${key}\\) \\|\\| (\\d+)`)) ?? llm.match(new RegExp(`env\\.${key} \\?\\? (\\d+)`)))?.[1];
+  const keys = ["TOUR_RUNS_PER_HOUR", "RESOLVES_PER_HOUR", "FOLLOWUPS_PER_HOUR", "TOUR_DAILY_CAP"];
+  const row = `| \`${keys.join("`, `")}\` | \`${keys.map(dflt).join("`, `")}\` (hosted demo: \`${keys.map(hosted).join("`, `")}\`) |`;
+  assert.ok(readme.includes(row), `README limits row should be: ${row}`);
+  assert.ok(readme.includes(`| \`LLM_DAILY_CAP\` | \`${dflt("LLM_DAILY_CAP")}\` (hosted demo: \`${hosted("LLM_DAILY_CAP")}\`) |`), "LLM cap row");
+});

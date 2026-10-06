@@ -2,8 +2,9 @@
 
 import type { Insight, Withheld } from "@/lib/guard";
 import type { Source } from "@/lib/evidence";
+import { coverageText } from "@/lib/tour/coverage-text";
 import type { City, Coverage, FanProfile } from "@/lib/tour/types";
-import { Chip, Cites, InsightText, Section, Writing, clean, isSample } from "./atoms";
+import { Chip, Cites, InsightText, Section, Writing, clean, isSample, score1 } from "./atoms";
 
 const AGE: Record<string, string> = {
   "24_and_younger": "≤24", "25_to_29": "25–29", "30_to_34": "30–34", "35_to_44": "35–44", "45_to_54": "45–54", "55_and_older": "55+",
@@ -26,7 +27,7 @@ function IndexBar({ label, value }: { label: string; value: number }) {
 /** The fan profile as a festival line-up: bigger type means stronger affinity. */
 export function FanLineup({ fan, proxyOf }: { fan?: FanProfile; proxyOf?: string[] }) {
   if (!fan || (!fan.tags.length && !fan.demographics && !fan.alsoLikes.length)) {
-    return <Section title="The fans" id="fans"><div className="space-y-2"><div className="skeleton h-10" /><div className="skeleton h-24" /></div></Section>;
+    return null; // appears with the first fan data; no placeholder blocks
   }
   const max = Math.max(...fan.tags.map((t) => t.affinity ?? 0.5), 0.01);
   const sample = fan.tags.some((t) => isSample(t.name));
@@ -167,23 +168,14 @@ export function CoverageNote({ coverage, region, cities = [], stopNames = [] }: 
   return (
     <div className={`rounded-xl border px-4 py-3 text-sm ${limited ? "border-sample/60" : "border-line"} bg-surface`}>
       {limited && <p className="mb-1 font-semibold text-sample">Limited data</p>}
-      <p className="text-muted">
-        {coverage.basis === "hotspots" ? (
-          <>Qloo&apos;s fan map of {region ?? "the region"} found {coverage.hotspotCells} hotspots{coverage.evidence && <> <Cites ids={[coverage.evidence]} /></>}
-            {coverage.remoteCells > 0 && <> ({coverage.remoteCells} far from any touring city)</>}.
-            {coverage.roomFallback && <> They pointed to only {coverage.hotspotMarkets} touring {coverage.hotspotMarkets === 1 ? "city" : "cities"}, so cities whose rooms this audience favours were added.</>}
-            {" "}Each nearby city is scored by its best-matching live room.</>
-        ) : <>Your cities, each scored by its best-matching live room.</>}
-        {coverage.droppedRooms ? <> {coverage.droppedRooms} unlikely room{coverage.droppedRooms === 1 ? "" : "s"} (out of town or not a venue) {coverage.droppedRooms === 1 ? "was" : "were"} left out.</> : null}
-        {coverage.unscored.length > 0 && <> No matching rooms in {coverage.unscored.join(", ")}.</>}
-      </p>
+      <p className="text-muted">{coverageText(coverage, region)}{coverage.evidence && <> <Cites ids={[coverage.evidence]} /></>}</p>
       {ranked.length > 1 && (
         <ol aria-label="Every city scored, best first" className="mt-3 flex flex-wrap items-center gap-x-1 gap-y-1.5">
           {ranked.map((c, i) => (
             <li key={c.entityId} className="flex items-center">
               {i === cut && cut > 0 && cut < ranked.length && <span aria-label="cut line" className="mx-2 h-6 w-px bg-neon" />}
               <span className={`rounded-md px-2 py-1 ${onRoute(c) ? "bg-surface-2 text-ink" : "text-muted"}`}>
-                {clean(c.name)} <b className="font-display text-base tabular-nums">{Math.round(c.affinity * 100)}</b>
+                {clean(c.name)} <b className="font-display text-base tabular-nums">{score1(c.affinity)}</b>
               </span>
             </li>
           ))}

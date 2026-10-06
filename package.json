@@ -11,7 +11,10 @@
     "qloo:key": "node scripts/set-qloo-key.mjs",
     "qloo:verify": "node --env-file-if-exists=.env.local --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-qloo.mts",
     "qloo:verify-tour": "node --env-file-if-exists=.env.local --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-tour.mts",
-    "presets:capture": "node --env-file-if-exists=.env.local --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/capture-presets.mts"
+    "presets:capture": "node --env-file-if-exists=.env.local --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/capture-presets.mts",
+    "docs:excerpt": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/docs-excerpt.mts",
+    "typecheck": "next typegen && tsc --noEmit",
+    "pretest": "next typegen > /dev/null"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",

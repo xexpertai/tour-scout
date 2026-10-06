@@ -65,7 +65,7 @@ Rules:
 - Describe audience overlap as shared tastes, naming the shared items; never quantify it ("significantly", "most fans") unless a number is provided.
 - Describe the audience only through the provided tags and affinities; do not invent traits (e.g. "collectors", "students").
 - If the act is arena-scale, say the plan shows where the fans are, but the suggested rooms are clubs and theatres this audience favours, not arena-sized venues.
-- A stop's affinity (0–100) is its best room affinity: how strongly the act's audience lines up with the city's best-matching live room. Quote it exactly as given and call it room affinity. fanHotspot: true means Qloo's country-wide heatmap puts a fan hotspot near that city (cite hotspotEvidence); say "near a Qloo fan hotspot", never "confirmed".
+- A stop's affinity (0–100) is its best room affinity: how strongly the act's audience lines up with the city's best-matching live room. Quote it exactly as given (one decimal, e.g. 88.4) and call it room affinity. fanHotspot: true means Qloo's country-wide heatmap puts a fan hotspot near that city (cite hotspotEvidence); say "near a Qloo fan hotspot", never "confirmed".
 - Demographic values are relative over/under-index scores, not percentages.
 - Mention demographics only as Qloo's aggregate index with the exact bucket and value, e.g. "ages 45–54 over-index (+0.53)". Never characterise the audience by gender or age ("skews male", "older crowd", "mostly women").
 - Demographics describe the whole audience nationally, in aggregate; they are not per city. Never attribute them to a city, never say a group "dominates", and never recommend targeting, excluding, framing for or marketing to an age or gender group.
@@ -196,13 +196,13 @@ export const scriptedProvider: SynthesisProvider = {
     const allStops = input.stops.map((s) => s.evidence);
     return {
       summary: {
-        text: `Qloo ranks ${input.stops.map((s) => clean(s.city)).join(", ")} highest for ${possessive(name)} fan affinity. ${input.artist.arenaScale ? "This is an arena-scale act: the plan shows where the fans are, but the suggested rooms are clubs and theatres, not arenas." : "Each stop below targets the neighbourhood where that affinity concentrates."}`,
+        text: `${input.stops.map((s) => clean(s.city)).join(", ")} score highest on Qloo room affinity for ${input.artist.proxyOf?.length ? `fans of ${input.artist.proxyOf.map(clean).join(" and ")}` : `${possessive(name)} audience`}. ${input.artist.arenaScale ? "This is an arena-scale act: the plan shows where the fans are, but no club or theatre rooms are suggested." : "Each stop below names the neighbourhood where those fans cluster."}`,
         evidence: [...new Set(allStops)],
       },
       stops: input.stops.map((s) => ({
         stop_id: s.stop_id,
         why: {
-          text: `${clean(s.city)} scores ${s.affinity} out of 100 on Qloo room affinity${s.fanHotspot ? " and sits near a Qloo fan hotspot" : ""}${s.cluster ? `; fans in the city concentrate around ${clean(s.cluster)}` : ""}.`,
+          text: `${clean(s.city)} scores ${s.affinity.toFixed(1)} out of 100 on Qloo room affinity${s.fanHotspot ? " and sits near a Qloo fan hotspot" : ""}${s.cluster ? `; fans in the city concentrate around ${clean(s.cluster)}` : ""}.`,
           evidence: [s.evidence, s.hotspotEvidence, s.clusterEvidence].filter((x): x is string => Boolean(x)),
         },
         pitch: {

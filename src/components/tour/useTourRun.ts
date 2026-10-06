@@ -4,14 +4,11 @@ import { useCallback, useRef, useState } from "react";
 import type { Insight } from "@/lib/guard";
 import type { Source } from "@/lib/evidence";
 import type { CapturedRun } from "@/lib/tour/presets";
+import { editedOrigin, type RunOrigin } from "@/lib/tour/source-label";
 import type { AskEvent, City, Coverage, FanProfile, FollowUp, StopData, TourEvent, TourInput, TourPlan } from "@/lib/tour/types";
 
 export type StopView = StopData & { order?: number; why?: Insight; pitch?: Insight; textDone?: boolean };
-export type RunOrigin =
-  | { kind: "live" }
-  | { kind: "reused"; createdAt: string }
-  | { kind: "preset"; slug: string; capturedAt: string }
-  | { kind: "shared"; createdAt: string };
+export type { RunOrigin };
 
 export type RunState = {
   status: "idle" | "running" | "writing" | "done" | "error";
@@ -162,7 +159,7 @@ export function useTourRun(sharedPlan?: TourPlan) {
     }
   }, [apply]);
 
-  /** Replays a captured run, compressed to about 7 seconds so the route animation reads as one gesture. */
+  /** Replays a captured run in about 7 seconds, so the map choreography reads as one gesture. */
   const replay = useCallback(async (slug: string) => {
     abortRef.current?.abort();
     const controller = new AbortController();
@@ -173,11 +170,15 @@ export function useTourRun(sharedPlan?: TourPlan) {
       if (!res.ok) throw new Error("This demo isn't available right now.");
       const run = (await res.json()) as CapturedRun;
       setState((s) => ({ ...s, origin: { kind: "preset", slug, capturedAt: run.capturedAt }, recordedScout: run.scout }));
+      // Pacing: the fan-profile steps before the cities arrive are compressed into ~1 s, so the map
+      // lights up almost at once; the rest (stops, then text) is compressed to ~5 s.
       const last = run.events.at(-1)?.at || 1;
-      const scale = Math.min(1, 7000 / last);
+      const citiesAt = run.events.find((e) => (e.event as { type: string }).type === "cities")?.at ?? 0;
+      const head = 1000, rest = Math.min(1, 4800 / Math.max(1, last - citiesAt));
+      const timeOf = (at: number) => (at <= citiesAt ? (citiesAt ? (at / citiesAt) * head : 0) : head + (at - citiesAt) * rest);
       let clock = 0;
       for (const { at, event } of run.events) {
-        const wait = Math.max(0, at * scale - clock);
+        const wait = Math.max(0, timeOf(at) - clock);
         if (wait > 15) await new Promise((r) => setTimeout(r, wait));
         clock += wait;
         if (controller.signal.aborted) return;
@@ -195,10 +196,10 @@ export function useTourRun(sharedPlan?: TourPlan) {
     if (!plan) return "The plan isn't finished yet.";
     const recorded = state.origin?.kind === "preset" && state.recordedScout?.question === question ? state.recordedScout : undefined;
     if (recorded) {
-      // Replays the captured exchange (compressed to ~6 s): same steps, same answer, no API call.
+      // Replays the captured exchange (compressed to ~4.5 s): same steps, same answer, no API call.
       setState((s) => ({ ...s, scout: { busy: true, checks: [] } }));
       const last = recorded.events.at(-1)?.at || 1;
-      const scale = Math.min(1, 6000 / last);
+      const scale = Math.min(1, 4500 / last);
       let clock = 0;
       for (const { at, event } of recorded.events) {
         const wait = Math.max(0, at * scale - clock);
@@ -230,8 +231,8 @@ export function useTourRun(sharedPlan?: TourPlan) {
       error = await readStream<AskEvent>(res, (e) => setState((s) => {
         switch (e.type) {
           case "forked":
-            // The demo was copied into storage so its answers can be applied and shared.
-            return { ...s, origin: { kind: "live" }, plan: s.plan && { ...s.plan, id: e.planId } };
+            // The demo was copied into storage so its answers can be applied and shared; the scout runs live.
+            return { ...s, origin: editedOrigin(s.origin, true), plan: s.plan && { ...s.plan, id: e.planId } };
           case "checking":
           case "step":
             return { ...s, scout: { busy: true, checks: addCheck(s.scout.checks, e) } };
@@ -261,6 +262,7 @@ export function useTourRun(sharedPlan?: TourPlan) {
     if (!plan) return "No plan to change.";
     setState((s) => ({ ...s, scout: { busy: true, checks: [] } }));
     let error: string | undefined;
+    let liveSources = 0; // new Qloo evidence while applying means the change made live calls
     try {
       // A recorded preset answer is applied through the preset (the server holds the same recording).
       const replayed = state.origin?.kind === "preset" && state.replayedAnswers?.includes(index);
@@ -268,8 +270,9 @@ export function useTourRun(sharedPlan?: TourPlan) {
       const res = await fetch("/api/tour/apply", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
       error = await readStream<TourEvent>(res, (e) => setState((s) => {
         if (e.type === "step") return { ...s, scout: { busy: true, checks: addCheck(s.scout.checks, e) } };
-        if (e.type === "source") return { ...s, sources: [...s.sources, e.source] };
-        if (e.type === "plan") return { ...fromPlan(e.plan), origin: { kind: "live" }, scout: { busy: false, checks: [] } };
+        if (e.type === "source") { liveSources++; return { ...s, sources: [...s.sources, e.source] }; }
+        // A captured plan stays labelled as captured, with the scout change stated (not "live data").
+        if (e.type === "plan") return { ...fromPlan(e.plan), origin: editedOrigin(s.origin, liveSources > 0), scout: { busy: false, checks: [] } };
         if (e.type === "error") error = e.message;
         return s;
       }));

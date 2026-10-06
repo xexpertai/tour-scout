@@ -225,3 +225,46 @@ test("rooms that are not venues (a farm, a heritage railway) are dropped before 
   assert.deepEqual(kept.map((r) => r.name), ["Fuze Box", "The Iron Horse"]);
   assert.equal(dropped, 2);
 });
+
+test("the README and Devpost request excerpts match the stored Big Thief capture (regenerate with npm run docs:excerpt)", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { requestExcerpt, EXCERPT_START, EXCERPT_END } = await import("../src/lib/tour/excerpt.ts");
+  const excerpt = requestExcerpt(JSON.parse(readFileSync(new URL("../public/presets/us-indie-band.json", import.meta.url), "utf8")));
+  for (const file of ["../README.md", "../docs/SUBMISSION.md"]) {
+    const doc = readFileSync(new URL(file, import.meta.url), "utf8");
+    const block = doc.slice(doc.indexOf(EXCERPT_START) + EXCERPT_START.length, doc.indexOf(EXCERPT_END)).trim();
+    assert.equal(block, excerpt, `${file} excerpt is stale`);
+  }
+});
+
+test("plain-language notes have no empty clauses, stray spaces or doubled punctuation (every preset)", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { PRESETS } = await import("../src/lib/tour/presets.ts");
+  const { coverageText } = await import("../src/lib/tour/coverage-text.ts");
+  const bad = /\s[.,;:)]|\(\s|\s{2,}|\.\.|,,|\(\)/;
+  for (const p of PRESETS) {
+    const run = JSON.parse(readFileSync(new URL(`../public/presets/${p.slug}.json`, import.meta.url), "utf8"));
+    const plan = run.events.find((e: any) => e.event.type === "plan").event.plan;
+    const text = coverageText(plan.coverage, plan.coverage.region);
+    assert.doesNotMatch(text, bad, `${p.slug}: "${text}"`);
+    for (const t of [plan.summary, ...plan.stops.flatMap((s: any) => [s.why, s.pitch])].filter(Boolean)) assert.doesNotMatch(t.text.replace(/\n/g, " "), /\s[.,]|\s{3,}/, `${p.slug}: "${t.text}"`);
+  }
+  // An empty or zero clause never leaves a gap.
+  assert.doesNotMatch(coverageText({ basis: "hotspots", hotspotCells: 20, remoteCells: 0, hotspotMarkets: 7, roomFallback: false, scored: 6, unscored: [], limited: false }, "United Kingdom"), bad);
+});
+
+test("source line stays precise after a scout change: a captured plan is never relabelled as live data", async () => {
+  const { editedOrigin, sourceLabel, baseOrigin } = await import("../src/lib/tour/source-label.ts");
+  const d = () => "Oct 6";
+  const preset = { kind: "preset" as const, slug: "us-indie-band", capturedAt: "2026-10-06T00:00:00Z" };
+  assert.equal(sourceLabel(preset, d), "Captured from live Qloo data on Oct 6");
+  // A recorded scout answer applied (no new Qloo calls).
+  const applied = editedOrigin(preset, false);
+  assert.equal(sourceLabel(applied, d), "Captured from live Qloo data on Oct 6 · scout change applied");
+  assert.equal(baseOrigin(applied)?.kind, "preset"); // so the "not affiliated" note stays
+  // A live scout question or a change that made live Qloo calls says so; it stays live once live.
+  assert.equal(sourceLabel(editedOrigin(applied, true), d), "Captured from live Qloo data on Oct 6 · scout change from live Qloo data");
+  assert.equal(sourceLabel(editedOrigin(editedOrigin(preset, true), false), d), "Captured from live Qloo data on Oct 6 · scout change from live Qloo data");
+  // A live run stays a live run.
+  assert.equal(sourceLabel(editedOrigin({ kind: "live" }, false), d), "Live Qloo data");
+});

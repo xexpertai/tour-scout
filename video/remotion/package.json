@@ -1,0 +1,21 @@
+{
+  "name": "tour-scout-story-video",
+  "private": true,
+  "description": "Story video for Tour Scout (Remotion). Rendered locally; not part of the app build.",
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "render": "remotion render src/index.ts Story out/story-silent.mp4 --codec h264 --crf 16 --muted"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.533",
+    "@remotion/google-fonts": "^4.0.533",
+    "@remotion/media-utils": "^4.0.533",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "remotion": "^4.0.533"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "typescript": "^7.0.2"
+  }
+}

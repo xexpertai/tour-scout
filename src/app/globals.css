@@ -118,30 +118,33 @@ body {
 .maplibregl-ctrl-attrib { font-size: 10px; background: color-mix(in srgb, var(--surface) 80%, transparent) !important; color: var(--muted); }
 .maplibregl-ctrl-attrib a { color: var(--ink) !important; }
 .maplibregl-ctrl-attrib-button { filter: var(--attrib-filter, none); }
-.cand .mk { display: flex; align-items: center; gap: 6px; opacity: 0; transform: translateY(4px); transition: opacity .35s ease var(--delay, 0ms), transform .35s ease var(--delay, 0ms); pointer-events: none; }
-.cand.on .mk { opacity: 1; transform: none; }
-.cand-dot { width: 10px; height: 10px; border-radius: 999px; background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent), 0 0 16px var(--glow); }
-.cand-score { font-family: var(--font-display); font-size: 20px; line-height: 1; color: var(--ink); text-shadow: 0 0 6px var(--bg), 0 0 2px var(--bg); font-variant-numeric: tabular-nums; min-width: 1.4em; }
-.cand-name { font-size: 13px; font-weight: 600; color: var(--ink); text-shadow: 0 0 5px var(--bg), 0 0 2px var(--bg), 0 0 1px var(--bg); white-space: nowrap; }
+/* Markers are the dot or pin alone (anchored exactly on the city); labels are placed around them. */
+.cand .mk { position: relative; width: 12px; height: 12px; opacity: 0; transition: opacity .35s ease var(--delay, 0ms); pointer-events: none; }
+.cand.on .mk { opacity: 1; }
+.cand-dot { position: absolute; inset: 1px; border-radius: 999px; background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent), 0 0 16px var(--glow); }
+.lbl { position: absolute; top: 50%; left: calc(100% + 6px); transform: translateY(-50%); display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.at-left .lbl { left: auto; right: calc(100% + 6px); flex-direction: row-reverse; }
+.at-top .lbl { top: auto; left: 50%; bottom: calc(100% + 4px); transform: translateX(-50%); }
+.at-bottom .lbl { top: calc(100% + 4px); left: 50%; transform: translateX(-50%); }
+.crowded .lbl { display: none; }
+.cand-score { font-family: var(--font-display); font-size: 20px; line-height: 1; color: var(--ink); text-shadow: 0 0 6px var(--bg), 0 0 2px var(--bg); font-variant-numeric: tabular-nums; }
+.cand-name { font-size: 13px; font-weight: 600; color: var(--ink); text-shadow: 0 0 5px var(--bg), 0 0 2px var(--bg), 0 0 1px var(--bg); }
 .cand.won .mk { opacity: 0 !important; }
-.cand.crowded .cand-name { display: none; }
-.cand.crowded .cand-score { font-size: 15px; }
 .cand.lost .mk { opacity: .5; }
-.cand.lost .cand-dot { width: 7px; height: 7px; background: var(--muted); box-shadow: none; }
+.cand.lost .cand-dot { inset: 3px; background: var(--muted); box-shadow: none; }
 .cand.lost .cand-score { font-size: 14px; color: var(--muted); }
 .cand.lost .cand-name { color: var(--muted); }
-.stop .mk { display: flex; align-items: center; gap: 7px; opacity: 0; transform: scale(.5); transition: opacity .3s ease var(--delay, 0ms), transform .45s cubic-bezier(.3,1.6,.5,1) var(--delay, 0ms); }
+.stop .mk { position: relative; width: 34px; height: 34px; opacity: 0; transform: scale(.5); transition: opacity .3s ease var(--delay, 0ms), transform .45s cubic-bezier(.3,1.6,.5,1) var(--delay, 0ms); }
 .stop.on .mk { opacity: 1; transform: none; }
-.stop.left .mk { flex-direction: row-reverse; }
 .stop.removed .mk { opacity: .35; filter: grayscale(1); }
-.stop-name { font-family: var(--font-display); font-size: 17px; letter-spacing: .01em; text-transform: uppercase; color: var(--ink); white-space: nowrap; text-shadow: 0 0 8px var(--bg), 0 0 3px var(--bg), 0 0 1px var(--bg); pointer-events: none; }
+.stop-name { font-family: var(--font-display); font-size: 19px; letter-spacing: .01em; text-transform: uppercase; color: var(--ink); text-shadow: 0 0 8px var(--bg), 0 0 3px var(--bg), 0 0 1px var(--bg); pointer-events: none; }
 .stop-pin {
-  position: relative; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 999px; cursor: pointer;
-  background: var(--accent); color: var(--accent-ink); font-family: var(--font-mono); font-weight: 700; font-size: 13px;
+  position: absolute; inset: 0; display: grid; place-items: center; border-radius: 999px; cursor: pointer;
+  background: var(--accent); color: var(--accent-ink); font-family: var(--font-mono); font-weight: 800; font-size: 16px;
   box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px var(--accent), 0 0 18px var(--glow);
 }
-/* 44 px hit area around the 30 px pin. */
-.stop-pin::after { content: ""; position: absolute; inset: -7px; }
+/* 44 px hit area around the 34 px pin. */
+.stop-pin::after { content: ""; position: absolute; inset: -5px; }
 .stop.active .stop-pin { background: var(--neon); box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px var(--neon), 0 0 22px var(--neon); }
 .ghost .mk { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .ghost-ring { width: 20px; height: 20px; border-radius: 999px; border: 2px dashed var(--neon); background: color-mix(in srgb, var(--neon) 15%, transparent); }
@@ -261,4 +264,18 @@ body {
   .preview .pv-heat { opacity: .85; }
   .preview .pv-stop { opacity: 1; }
   .preview .pv-route { stroke-dashoffset: 0; }
+}
+
+/* Desktop plan view: one screen, panes scroll independently, the document never does. */
+@media (min-width: 1024px) {
+  html.plan-view,
+  html.plan-view body {
+    overflow: clip;
+  }
+}
+@media print {
+  html.plan-view,
+  html.plan-view body {
+    overflow: visible;
+  }
 }

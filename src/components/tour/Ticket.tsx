@@ -27,8 +27,8 @@ export function PitchLetter({ pitch, city }: { pitch: Insight; city: string }) {
         <span>To: the booker, {clean(city)}</span>
         <button type="button" onClick={copy} className="no-print min-h-11 rounded-lg border border-line px-4 text-sm hover:border-accent">{copied ? "Copied ✓" : "Copy"}</button>
       </div>
-      {hasSubject && <p className="mt-3 font-semibold">{subjectLine.replace(/^subject:\s*/i, "")}</p>}
-      <p className="mt-2 whitespace-pre-line text-[15px] leading-relaxed">{(hasSubject ? rest.join("\n") : pitch.text).trim()}</p>
+      {hasSubject && <p className="mt-3 text-lg font-semibold">{subjectLine.replace(/^subject:\s*/i, "")}</p>}
+      <p className="mt-2 whitespace-pre-line text-[18px] leading-relaxed">{(hasSubject ? rest.join("\n") : pitch.text).trim()}</p>
       <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs text-muted">
         <Chip kind={pitch.kind === "interpretation" ? "ai" : pitch.kind} /> <Cites ids={pitch.evidence} />
         <span>Draft: check every claim before you send it.</span>
@@ -50,7 +50,7 @@ function PitchSheet({ pitch, city, onClose }: { pitch: Insight; city: string; on
   return createPortal(
     <div className="no-print fixed inset-0 z-[1100] flex items-end justify-center bg-black/60 sm:items-center" onClick={onClose}>
       <div role="dialog" aria-modal="true" aria-label={`Pitch email for ${clean(city)}`} onClick={(e) => e.stopPropagation()}
-        className="slide-in max-h-[88dvh] w-full max-w-xl overflow-y-auto rounded-t-2xl border border-line bg-surface p-4 sm:rounded-2xl sm:p-6">
+        className="slide-in max-h-[calc(var(--app-h,100dvh)*0.9)] w-full max-w-3xl overflow-y-auto rounded-t-2xl border border-line bg-surface p-4 sm:rounded-2xl sm:p-7">
         <div className="mb-3 flex items-center justify-between">
           <h3 className="font-display text-2xl uppercase">Pitch · {clean(city)}</h3>
           <button ref={close} type="button" onClick={onClose} aria-label="Close" className="grid h-11 w-11 place-items-center rounded-full text-xl text-muted hover:text-ink">×</button>
@@ -58,7 +58,7 @@ function PitchSheet({ pitch, city, onClose }: { pitch: Insight; city: string; on
         <PitchLetter pitch={pitch} city={city} />
       </div>
     </div>,
-    document.body,
+    document.getElementById("app-root") ?? document.body,
   );
 }
 
@@ -95,7 +95,7 @@ export function StopTicket({ stop, active, writing, emerging = false, arena = fa
       <div className="tear-line mx-5" />
 
       <div className="space-y-4 p-5">
-        {stop.why ? <InsightText item={stop.why} clamp /> : writing && !stop.textDone ? <Writing label="Writing why this stop…" /> : null}
+        {stop.why ? <InsightText item={stop.why} brief /> : writing && !stop.textDone ? <Writing label="Writing why this stop…" /> : null}
         {stop.cluster && (
           <p className="flex flex-wrap items-center gap-1.5 text-sm text-muted">
             {isCoordinate(stop.cluster.name) ? "Fans concentrate in one part of the city" : <>Fans cluster around <b className="text-ink">{clean(stop.cluster.name)}</b></>}
@@ -114,8 +114,8 @@ export function StopTicket({ stop, active, writing, emerging = false, arena = fa
                   {rooms.map((v) => (
                     <li key={v.entityId} className="flex items-baseline justify-between gap-3">
                       <span className="min-w-0">
-                        <span className="block truncate font-medium">{clean(v.name)}</span>
-                        {(v.address || v.area) && <span className="block truncate text-xs text-muted">{v.address ?? v.area}</span>}
+                        <span className="block break-words font-medium">{clean(v.name)}</span>
+                        {(v.address || v.area) && <span className="block break-words text-xs text-muted">{v.address ?? v.area}</span>}
                       </span>
                       {v.affinity !== undefined && <span className="shrink-0 font-display text-lg tabular-nums text-muted" title="Qloo affinity, 0–100">{Math.round(v.affinity * 100)}</span>}
                     </li>

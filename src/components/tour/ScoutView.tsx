@@ -1,5 +1,6 @@
 "use client";
 
+import { baseOrigin, sourceLabel } from "@/lib/tour/source-label";
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import { InsightText, ProvenanceLegend, ReceiptsContext, ReceiptsToggle, Section, Writing, clean, fitDisplay, shortDate } from "./atoms";
@@ -31,14 +32,13 @@ const llmLabel = (llm?: string) =>
 
 /** One quiet line saying where the data came from: captured, shared or live; Qloo or sample; who wrote the text. */
 function SourceLine({ state }: { state: RunState }) {
-  const o = state.origin;
   const sample = state.qloo === "mock";
-  const when = o?.kind === "preset" ? `Captured from live Qloo data on ${shortDate(o.capturedAt)}` : o?.kind === "shared" ? `Shared plan from live Qloo data, ${shortDate(o.createdAt)}`
-    : o?.kind === "reused" ? `Same tour planned earlier (${shortDate(o.createdAt)}), live Qloo data` : "Live Qloo data";
+  const when = sourceLabel(state.origin, shortDate);
   return (
     <p className="text-sm text-muted">
       {sample ? <span className="font-semibold text-sample">Sample data, no Qloo key</span> : <><span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-qloo align-middle" />{when}</>}
-      {llmLabel(state.llm) && <> · {llmLabel(state.llm)}</>}
+      {/* Who wrote the text is stated only once text exists (a run can stop before any is written). */}
+      {llmLabel(state.llm) && (state.status === "writing" || state.status === "done") && <> · {llmLabel(state.llm)}</>}
     </p>
   );
 }
@@ -129,6 +129,13 @@ export function ScoutView({ state, heading, onRetry, onRerunLive, onAsk, onApply
     return () => io.disconnect();
   }, [ordered.length]);
 
+  // Desktop plan view is exactly one screen with its own scrolling panes; clip the document so a
+  // scrollIntoView (a pin click, a Q-id link) can never shift the whole page under the header.
+  useEffect(() => {
+    document.documentElement.classList.add("plan-view");
+    return () => document.documentElement.classList.remove("plan-view");
+  }, []);
+
   // Printing (button or Ctrl+P) shows every pitch email: collapsed <details> do not print their content.
   useEffect(() => {
     const open = () => document.querySelectorAll("details").forEach((d) => { d.open = true; });
@@ -150,17 +157,20 @@ export function ScoutView({ state, heading, onRetry, onRerunLive, onAsk, onApply
 
   return (
     <ReceiptsContext.Provider value={{ on: receipts, toggle: () => setReceipts((r) => !r) }}>
-    <div className="lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
-      <div className={`print-map sticky top-14 z-10 border-b border-line transition-[height] duration-300 lg:h-[calc(100dvh-3.5rem)] lg:border-b-0 lg:border-r ${expanded ? "h-[60vh]" : compact ? "h-[30vh]" : "h-[46vh]"}`}>
+    {/* Desktop: exactly one screen tall; the map and the plan pane scroll on their own, never the window. */}
+    <div className="lg:grid lg:h-[calc(var(--app-h,100dvh)-3.5rem)] lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:overflow-clip print:h-auto print:overflow-visible">
+      <div className={`print-map sticky top-14 z-10 border-b border-line transition-[height] duration-300 lg:static lg:h-[calc(var(--app-h,100dvh)-3.5rem)] lg:border-b-0 lg:border-r ${expanded ? "h-[60vh]" : compact ? "h-[30vh]" : "h-[46vh]"}`}>
         <TourMap cities={mapCities} stops={mapStops} cells={state.coverage?.cells} ghosts={ghosts} proposal={proposal} activeId={activeId} focusId={focusId} onSelect={goTo}
-          stopsWanted={state.plan?.stops.length ?? heading.expectedStops} compactPadding={compact} />
+          routeFinal={Boolean(state.plan)} />
         <button type="button" onClick={() => setExpanded(!expanded)} aria-expanded={expanded}
           className="no-print absolute right-2 top-2 z-[5] min-h-11 rounded-full border border-line bg-bg/90 px-3 text-sm lg:hidden">
           {expanded ? "Shrink map" : "Expand map"}
         </button>
       </div>
 
-      <div className="min-w-0 space-y-10 px-4 pt-6 sm:px-6">
+      {/* Desktop: the plan scrolls in its own pane and the scout dock sits below it, so nothing is ever underneath the dock. */}
+      <div className="min-w-0 lg:flex lg:h-[calc(var(--app-h,100dvh)-3.5rem)] lg:flex-col print:h-auto">
+      <div id="plan-scroll" className="min-w-0 space-y-10 px-4 pt-6 sm:px-6 lg:min-h-0 lg:flex-1 lg:overflow-y-auto print:overflow-visible">
         <header className="space-y-3 [container-type:inline-size]">
           <p className="text-sm text-muted">{heading.sub}</p>
           <h1 className="font-display uppercase leading-[0.9]" style={fitDisplay(heading.name, "4.5rem")}>{clean(heading.name)}</h1>
@@ -175,7 +185,7 @@ export function ScoutView({ state, heading, onRetry, onRerunLive, onAsk, onApply
             )}
           </div>
           <ProvenanceLegend />
-          {origin?.kind === "preset" && (
+          {baseOrigin(origin)?.kind === "preset" && (
             <p className="text-xs text-muted">Demo using a public {heading.proxyOf?.length ? "artist comparison" : "name"} and aggregate Qloo data. Not affiliated with or endorsed by {heading.proxyOf?.length ? heading.proxyOf.map(clean).join(" or ") : clean(heading.name)}; pitch emails are sample drafts.</p>
           )}
         </header>
@@ -206,7 +216,7 @@ export function ScoutView({ state, heading, onRetry, onRerunLive, onAsk, onApply
           <div className="space-y-4">
             {ordered.map((s) => <StopTicket key={s.stopId} stop={s} active={s.stopId === activeId} writing={running} emerging={Boolean(heading.proxyOf?.length)}
               arena={Boolean(heading.arenaScale)} rank={rankOf(s.city.name)} of={ranked.length || undefined} />)}
-            {running && ordered.length === 0 && [0, 1].map((i) => <div key={i} className="skeleton h-40 rounded-2xl" />)}
+            {running && ordered.length === 0 && <p className="text-sm text-muted">Stops appear here as Qloo scores each city.</p>}
           </div>
         </Section>
 
@@ -214,8 +224,9 @@ export function ScoutView({ state, heading, onRetry, onRerunLive, onAsk, onApply
         {(state.plan || writing) && <ShowIdeas theme={state.plan?.theme ?? []} merch={state.plan?.merch ?? []} risks={state.plan?.risks ?? []} writing={!state.plan} />}
         {state.plan && <WithheldNote withheld={state.plan.withheld} />}
         {state.sources.length > 0 && <CreditsRoll sources={state.sources} />}
-        <div className="h-24 lg:h-6" aria-hidden />
-        {state.plan && <div className="hidden lg:block lg:sticky lg:bottom-0 lg:z-20"><ScoutDock variant="dock" {...dock} /></div>}
+        <div className="h-24 lg:h-8" aria-hidden />
+      </div>
+        {state.plan && <div className="hidden px-6 lg:block lg:shrink-0"><ScoutDock variant="dock" {...dock} /></div>}
       </div>
       {sheet && state.plan && <ScoutDock variant="sheet" onClose={() => setSheet(false)} {...dock} />}
 

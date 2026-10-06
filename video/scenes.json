@@ -1,83 +1,88 @@
 {
   "_meta": {
-    "note": "Canonical video script. Each line is spoken by Kokoro af_heart and shown as a caption; 'take' names a scripted Playwright take in scripts/video/takes.py (card:<id> = a still from scripts/video/cards.html). Build: scripts/video/make-draft.sh <out_dir>.",
+    "note": "Canonical video script. Each line is spoken by Kokoro af_heart and shown in the 90 px caption band below the 1920x990 app frame (letterboxed, so captions never cover the UI). 'take' names a scripted Playwright take in scripts/video/takes.py (card:<id> = a still from scripts/video/cards.html). Build: scripts/video/make-draft.sh <out_dir> (FINAL=1 for the final render).",
     "voice": "af_heart",
-    "maxSeconds": 150,
-    "rules": "No greeting; the voice never claims to be a person. No statistic unless verified against a primary source and cited on screen (the hook uses none). No credentials or personal data on screen. Specific names in lines must match the filmed live run (takes.py prints them).",
-    "endcard": "Credit is on-screen text only. Replace DEMO_URL / REPO_URL in scripts/video/cards.html after the user approves hosting and a public repo."
+    "maxSeconds": 110,
+    "rules": "No greeting; the voice never claims to be a person. No statistic unless verified against a primary source and cited on screen (none is used). No credentials or personal data on screen. Specific names in lines must match the Big Thief preset (takes.py writes facts.json). No placeholder text in a final render.",
+    "endcard": "Credit is on-screen text only. Links come from scripts/video/config.json."
   },
   "scenes": [
     {
       "id": "hook",
       "take": "card:hook",
       "lines": [
-        "Every tour is a bet.",
-        "Book the wrong room in the wrong city, and the empty seats are yours to pay for.",
-        "Big acts have data teams. Small acts route by guesswork."
+        "Every tour is a bet."
       ]
     },
     {
       "id": "live",
       "take": "live",
       "lines": [
-        "Tour Scout plans the tour from where the fans actually are.",
-        "Type an act, confirm it's the right one on Qloo, and choose the stops.",
-        "Then it scouts live. Each Qloo call lands as a numbered source."
-      ],
-      "minSeconds": 17
+        "Type any act and confirm the match on Qloo. Then it scouts live, one Qloo call at a time."
+      ]
     },
     {
-      "id": "route",
-      "take": "route",
+      "id": "map",
+      "take": "map",
       "lines": [
+        "Here is a captured Big Thief run.",
         "Qloo's fan map lights up where this audience concentrates across the country.",
-        "Each hotspot is snapped to a touring city, and every city is scored by how strongly these fans favour its live rooms.",
-        "For Big Thief, that's a tight New England run."
+        "Each hotspot becomes a touring city, scored by how strongly these fans favour its live rooms."
+      ]
+    },
+    {
+      "id": "strip",
+      "take": "strip",
+      "lines": [
+        "Every city is ranked. The cut line shows why these five made it: a tight New England run."
       ]
     },
     {
       "id": "ticket",
       "take": "ticket",
       "lines": [
-        "Each stop shows the neighbourhood where fans cluster, real rooms they favour, and an opener whose audience shares their taste."
+        "Each stop shows where fans cluster, real rooms they favour, and an opener whose audience shares their taste."
       ]
     },
     {
       "id": "pitch",
       "take": "pitch",
       "lines": [
-        "Claude Haiku drafts a pitch for each booker.",
-        "Every line cites Qloo evidence, and a guard withholds what the data can't support, like turnout promises or invented room sizes."
+        "Claude drafts each booker pitch, citing Qloo evidence."
       ]
     },
     {
       "id": "scout",
       "take": "scout",
       "lines": [
-        "Ask the scout a question.",
-        "An agent picks Qloo tools, runs them, and proposes a change."
+        "Ask the scout. An agent picks Qloo tools, runs them, and proposes a change."
       ]
     },
     {
-      "id": "proposal",
-      "take": "proposal",
+      "id": "apply",
+      "take": "apply",
       "lines": [
-        "The proposal comes back as a change you can apply. The server checks it against what the scout actually found."
+        "The server checks the proposal. Apply it, and Andy Shauf becomes the Burlington opener."
       ]
     },
     {
-      "id": "sources",
-      "take": "sources",
+      "id": "receipts",
+      "take": "receipts",
       "lines": [
-        "Flip on receipts, and every value shows the Qloo request behind it.",
-        "No credentials and no personal data. Only aggregate taste."
+        "Flip on receipts: every value links to the exact Qloo request behind it. No credentials, no personal data."
       ]
     },
     {
-      "id": "presets",
-      "take": "presets",
+      "id": "comedian",
+      "take": "comedian",
       "lines": [
-        "It works for stand-up comedians too, with comedy clubs and club comics as openers.",
+        "It works for stand-up comedians, with comedy clubs and club comics as openers."
+      ]
+    },
+    {
+      "id": "emerging",
+      "take": "emerging",
+      "lines": [
         "And for new acts, planned from the fans of artists they sound like."
       ]
     },
@@ -85,23 +90,16 @@
       "id": "how",
       "take": "card:how",
       "lines": [
-        "Under the hood: Qloo's where-popular, recommend, compare-audiences and tag workflows, through the official Qloo harness."
+        "Under the hood: the official Qloo harness, and Claude Haiku for the words."
       ]
     },
     {
-      "id": "close",
-      "take": "card:close",
+      "id": "end",
+      "take": "card:end",
       "lines": [
-        "Tour Scout. Find your fans before you book the room."
-      ]
-    },
-    {
-      "id": "endcard",
-      "take": "card:endcard",
-      "lines": [
-        "Thanks for watching."
+        "Tour Scout. Find your fans before you book the room. Thanks for watching."
       ],
-      "minSeconds": 3.5
+      "minSeconds": 4.2
     }
   ]
 }

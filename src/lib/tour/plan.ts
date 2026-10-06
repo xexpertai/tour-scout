@@ -98,7 +98,7 @@ export function synthesisInput(input: TourInput, a: PhaseAResult, arenaScale: bo
       alsoLikes: a.fan.alsoLikes.map((x) => ({ domain: x.domain, items: x.items.map((i) => i.name), evidence: x.evidence })),
     },
     stops: a.stops.map((s) => ({
-      stop_id: s.stopId, city: s.city.name, affinity: Math.round(s.city.affinity * 100), evidence: s.city.evidence,
+      stop_id: s.stopId, city: s.city.name, affinity: Math.round(s.city.affinity * 1000) / 10, evidence: s.city.evidence,
       fanHotspot: s.city.hotspot ? true : undefined, hotspotEvidence: s.city.hotspot?.evidence,
       cluster: s.cluster && !/^-?\d/.test(s.cluster.name) ? s.cluster.name : undefined, clusterEvidence: s.cluster?.evidence,
       venues: s.venues.map((v) => v.name), venuesEvidence: s.venues[0]?.evidence,

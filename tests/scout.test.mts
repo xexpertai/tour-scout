@@ -125,3 +125,18 @@ test("leaked evidence lists and quotes are stripped from the scout's answer", as
   assert.equal(cleanAnswer('Alvvays or Andy Shauf would fit. Either enhances the lineup.",\n["Q30", "Q32", "Q31"]'), "Alvvays or Andy Shauf would fit. Either enhances the lineup.");
   assert.equal(cleanAnswer("Keep the route as is (Q12)."), "Keep the route as is (Q12).");
 });
+
+test("applying a new opener rewrites that stop's text, so nothing still names the old opener", async () => {
+  const plan: any = await makePlan(3);
+  const stop = plan.stops[0];
+  const old = stop.opener.name;
+  // The model's text for this stop names the old opener (as Claude's did in the Big Thief demo).
+  stop.why = { text: `Strong fit. ${old} as suggested opener shares melodic tastes.`, evidence: [stop.city.evidence], kind: "interpretation" };
+  plan.followUps = [{ kind: "agent", question: "opener?", answer: { text: "Try someone else.", evidence: [], kind: "general" }, pins: [], sources: [], askedAt: "",
+    proposal: { add: [], remove: [], opener: { stopId: stop.stopId, opener: { entityId: "sample-x", name: "New Opener (sample)", evidence: stop.city.evidence } }, summary: "opener → New Opener" } }];
+  const next = await applyProposal(plan, 0, sink());
+  const changed = next.stops.find((s: any) => s.stopId === stop.stopId)!;
+  assert.equal(changed.opener!.name, "New Opener (sample)");
+  assert.ok(!`${changed.why?.text} ${changed.pitch?.text}`.includes(old), "no text names the old opener");
+  assert.equal(changed.why?.kind, "template");
+});

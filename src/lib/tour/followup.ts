@@ -13,7 +13,8 @@ import type { FollowUp, TourPlan } from "./types.ts";
 
 export const MAX_FOLLOW_UPS = 5;
 const clean = (s: string) => s.replace(/\s*\(sample\)$/, "");
-const score = (n?: number) => (n === undefined ? "n/a" : String(Math.round(n * 100)));
+// One decimal, as the UI shows city scores (88.4 vs 88.8 would otherwise both read "88").
+const score = (n?: number) => (n === undefined ? "n/a" : (Math.round(n * 1000) / 10).toFixed(1));
 const sameCity = (a: string, b: string) => clean(a).toLowerCase() === clean(b).toLowerCase();
 
 /** Pulls the city out of phrasings like "why not Chicago?" or "what about Austin". */

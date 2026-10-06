@@ -180,7 +180,8 @@ export function cleanAnswer(raw: string): string {
 }
 
 // ---------------------------------------------------------------- the loop
-const score = (n?: number) => (n === undefined ? null : Math.round(n * 100));
+// One decimal, as the UI shows scores (88.4 vs 88.8 would otherwise both read "88").
+const score = (n?: number) => (n === undefined ? null : Math.round(n * 1000) / 10);
 const sameCity = (a: string, b: string) => clean(a).toLowerCase() === clean(b).toLowerCase();
 
 function planBrief(plan: TourPlan, question: string): string {

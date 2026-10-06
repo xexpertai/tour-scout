@@ -21,7 +21,6 @@ export const PRESETS: Preset[] = [
   { slug: "us-indie-band", artist: "Big Thief", kind: "artist", region: "United States", stops: 5, capacity: [300, 900], bill: ["Burlington", "Albany", "Northampton", "Boston", "Portland ME"], flyer: { headline: "Big Thief", sub: "Indie band · 5 US stops" } },
   { slug: "us-comedian", artist: "Mark Normand", kind: "person", region: "United States", stops: 4, bill: ["Denver", "Austin", "Providence", "Burlington"], flyer: { headline: "Mark Normand", sub: "Stand-up · 4 US stops" } },
   { slug: "uk-emerging", artist: "Night Swim", kind: "artist", soundsLike: ["Mitski", "Men I Trust"], region: "United Kingdom", stops: 3, capacity: [80, 250], bill: ["London", "Oxford", "Manchester"], flyer: { headline: "Night Swim", sub: "Emerging act · sounds like Mitski, Men I Trust" } },
-  { slug: "us-arena", artist: "Taylor Swift", kind: "artist", region: "United States", stops: 5, bill: ["Orlando", "Jacksonville", "Charleston", "Pittsburgh", "Boston"], flyer: { headline: "Taylor Swift", sub: "Stress test: what if the act is huge?" }, stressTest: true },
 ];
 
 /** A captured run: the event stream with arrival offsets, replayed by the UI. */

@@ -103,7 +103,7 @@ export function ScoutDock({ variant, onClose, ...p }: ScoutDockProps & { variant
   const panel = (
     <section id="ask" aria-label="Ask the scout"
       className={variant === "dock"
-        ? "no-print -mx-4 border-t border-line bg-surface/95 px-4 pb-4 pt-3 shadow-[0_-12px_30px_-12px_rgba(0,0,0,.6)] backdrop-blur sm:-mx-6 sm:px-6"
+        ? "no-print -mx-6 border-t border-line bg-surface px-6 pb-4 pt-3"
         : "slide-in max-h-[85dvh] w-full overflow-hidden rounded-t-2xl border border-line bg-surface p-4"}>
       <div className="flex items-center justify-between gap-3">
         <h2 className="font-display text-2xl uppercase">Ask the scout</h2>
@@ -116,7 +116,7 @@ export function ScoutDock({ variant, onClose, ...p }: ScoutDockProps & { variant
         )}
       </div>
       {showBody && (
-        <div ref={body} className={`mt-2 space-y-3 overflow-y-auto pr-1 ${variant === "dock" ? "max-h-[42vh]" : "max-h-[50dvh]"}`}>
+        <div ref={body} className={`mt-2 space-y-3 overflow-y-auto pr-1 ${variant === "dock" ? "max-h-[calc(var(--app-h,100dvh)*0.42)]" : "max-h-[50dvh]"}`}>
           {(p.scout.busy || p.scout.checks.length > 0) && <Trace checks={p.scout.checks} busy={p.scout.busy} />}
           {latest.map(({ f, i }) => <AnswerCard key={`${f.askedAt}-${i}`} f={f} index={i} busy={p.scout.busy} replayed={p.replayed.includes(i)} onApply={p.onApply} />)}
         </div>
@@ -130,10 +130,10 @@ export function ScoutDock({ variant, onClose, ...p }: ScoutDockProps & { variant
           {p.scout.busy ? "…" : "Ask"}
         </button>
       </form>
-      <div className="no-scrollbar mt-2 flex gap-2 overflow-x-auto">
+      <div className="mt-2 flex flex-wrap gap-2">
         {p.suggestions.map((s) => (
           <button key={s.text} type="button" disabled={p.scout.busy} onClick={() => send(s.text)}
-            className="min-h-11 shrink-0 rounded-full border border-line px-3 text-left text-sm text-muted hover:border-accent hover:text-ink disabled:opacity-50">
+            className="min-h-11 rounded-full border border-line px-3 text-left text-sm text-muted hover:border-accent hover:text-ink disabled:opacity-50">
             {s.text}{s.recorded && <span className="ml-1.5 text-xs text-qloo">· instant</span>}
           </button>
         ))}
