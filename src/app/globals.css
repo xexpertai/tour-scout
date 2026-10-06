@@ -1,0 +1,270 @@
+@import "tailwindcss";
+
+/* Gig-poster tokens. Dark (the club at night) is the brand default; light ("poster paper") is opt-in. */
+:root {
+  --bg: #0b0b0f;
+  --surface: #16161d;
+  --surface-2: #1f1f29;
+  --line: #2c2c38;
+  --ink: #f4f1ea;
+  --muted: #a7a2b0;
+  --accent: #ff6b1a;
+  --accent-ink: #0b0b0f;
+  --neon: #ff2e88;
+  --glow: #ff6b1a;
+  --qloo: #4fe3a5;
+  --qloo-bg: #11291f;
+  --ai: #c3b3ff;
+  --ai-bg: #231d3d;
+  --general: #b7b2c0;
+  --general-bg: #24242e;
+  --sample: #ffc861;
+  --sample-bg: #33270f;
+  --danger: #ff8a7a;
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --bg: #f4efe6;
+  --surface: #fffdf8;
+  --surface-2: #ebe4d6;
+  --line: #d6cdbb;
+  --ink: #141418;
+  --muted: #5d5866;
+  --accent: #d24d06;
+  --accent-ink: #ffffff;
+  --neon: #c8006a;
+  --glow: #ff6b1a;
+  --qloo: #0f7a52;
+  --qloo-bg: #d9f2e6;
+  --ai: #5b3fd1;
+  --ai-bg: #e7e1ff;
+  --general: #5d5866;
+  --general-bg: #e6e0d4;
+  --sample: #8a5a00;
+  --sample-bg: #fbe9c2;
+  --danger: #b42318;
+  color-scheme: light;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-neon: var(--neon);
+  --color-qloo: var(--qloo);
+  --color-qloo-bg: var(--qloo-bg);
+  --color-ai: var(--ai);
+  --color-ai-bg: var(--ai-bg);
+  --color-general: var(--general);
+  --color-general-bg: var(--general-bg);
+  --color-sample: var(--sample);
+  --color-sample-bg: var(--sample-bg);
+  --color-danger: var(--danger);
+  --font-display: var(--font-anton), Impact, "Arial Narrow", sans-serif;
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--ink);
+}
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Poster grain: a faint noise so flat colour reads as printed paper. */
+.grain::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  z-index: 0;
+}
+
+/* Ticket stub: notches cut into both sides at the tear line. */
+.ticket {
+  --notch: 11px;
+  --tear: 112px;
+  -webkit-mask:
+    radial-gradient(circle var(--notch) at 0 var(--tear), #0000 98%, #000) left / 51% 100% no-repeat,
+    radial-gradient(circle var(--notch) at 100% var(--tear), #0000 98%, #000) right / 51% 100% no-repeat;
+  mask:
+    radial-gradient(circle var(--notch) at 0 var(--tear), #0000 98%, #000) left / 51% 100% no-repeat,
+    radial-gradient(circle var(--notch) at 100% var(--tear), #0000 98%, #000) right / 51% 100% no-repeat;
+}
+.tear-line {
+  background-image: linear-gradient(to right, var(--line) 50%, transparent 0);
+  background-size: 10px 2px;
+  background-repeat: repeat-x;
+  height: 2px;
+}
+
+/* Map: glowing affinity circles and a route that draws itself. */
+.glow-circle {
+  filter: blur(5px);
+  mix-blend-mode: screen;
+}
+:root[data-theme="light"] .glow-circle {
+  mix-blend-mode: multiply;
+}
+.route-line {
+  stroke: var(--neon);
+  filter: drop-shadow(0 0 4px var(--neon));
+}
+.route-line.drawing {
+  stroke-dasharray: var(--len);
+  stroke-dashoffset: var(--len);
+  animation: draw-route 2.4s ease-out forwards;
+}
+@keyframes draw-route {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.stop-pin {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 13px;
+  box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px var(--accent), 0 0 18px var(--glow);
+  animation: pop-in 0.4s ease-out both;
+}
+.stop-pin.active {
+  background: var(--neon);
+  box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px var(--neon), 0 0 22px var(--neon);
+}
+/* Dark map: invert OSM's light tiles into a night palette; markers and overlays are unaffected. */
+.map-dark .leaflet-tile-pane {
+  filter: invert(1) grayscale(1) brightness(0.78) contrast(1.05);
+}
+.leaflet-container {
+  background: var(--bg);
+  font-family: var(--font-sans);
+}
+.leaflet-container .leaflet-control-attribution {
+  font-size: 10px;
+  background: color-mix(in srgb, var(--surface) 85%, transparent);
+  color: var(--muted);
+}
+.leaflet-container .leaflet-control-attribution a {
+  color: var(--ink);
+}
+.leaflet-tooltip {
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.leaflet-tooltip-top::before {
+  border-top-color: var(--line);
+}
+
+@keyframes pop-in {
+  from {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+}
+@keyframes slide-up {
+  from {
+    transform: translateY(14px);
+    opacity: 0;
+  }
+}
+.slide-in {
+  animation: slide-up 0.45s ease-out both;
+}
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--line) 50%, var(--surface-2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+  border-radius: 6px;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .route-line.drawing {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Print / PDF: the plan as a clean document. Pitches open, interactive chrome hidden. */
+@media print {
+  :root {
+    --bg: #ffffff;
+    --surface: #ffffff;
+    --surface-2: #f4f1ea;
+    --line: #cccccc;
+    --ink: #111111;
+    --muted: #444444;
+    --accent: #c2410c;
+    --qloo: #0f7a52;
+    --qloo-bg: #d9f2e6;
+    --ai: #5b3fd1;
+    --ai-bg: #e7e1ff;
+    --general: #444444;
+    --general-bg: #ebe7df;
+    --sample: #7a4f00;
+    --sample-bg: #fbe9c2;
+    color-scheme: light;
+  }
+  .no-print,
+  .grain::before {
+    display: none !important;
+  }
+  /* The interactive map does not print well; the numbered stops carry the route on paper. */
+  .print-map {
+    display: none !important;
+  }
+  .ticket {
+    -webkit-mask: none;
+    mask: none;
+  }
+  .ticket > header,
+  .ticket details,
+  .ticket li {
+    break-inside: avoid;
+  }
+  .slide-in {
+    animation: none;
+  }
+  details > summary {
+    display: none;
+  }
+}

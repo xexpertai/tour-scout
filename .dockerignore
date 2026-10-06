@@ -1,0 +1,9 @@
+# Never send secrets or local state into the build context.
+.env*
+!.env.example
+.cache
+.git
+.next
+node_modules
+docs/screenshots
+*.tsbuildinfo
