@@ -14,7 +14,8 @@
     "presets:capture": "node --env-file-if-exists=.env.local --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/capture-presets.mts",
     "docs:excerpt": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/docs-excerpt.mts",
     "typecheck": "next typegen && tsc --noEmit",
-    "pretest": "next typegen > /dev/null"
+    "pretest": "next typegen > /dev/null",
+    "presets:recheck": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/presets-recheck.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",

@@ -1,11 +1,10 @@
 import React from "react";
-import { AbsoluteFill, interpolate, Sequence, useCurrentFrame } from "remotion";
+import { AbsoluteFill, Sequence, useCurrentFrame } from "remotion";
 import { C, ease, PIC_H, sans } from "./theme";
 import { END, f, FPS, SECTIONS, TAKES, wordAt } from "./data";
 import { around, CalloutSpec, Footage, full, Key, Spot } from "./components/Footage";
 import { Captions } from "./components/Captions";
-import { Close, Hook, How, PersonaTurn } from "./scenes/Graphics";
-import { Split } from "./scenes/Split";
+import { Close, Hook, How, Persona, WhyNot } from "./scenes/Graphics";
 
 type Shot = { start: number; end: number; take: string; from: number; rate?: number; keys: Key[]; callouts?: CalloutSpec[]; tag?: string; spot?: Spot };
 
@@ -14,108 +13,132 @@ const R = (take: string) => TAKES[take].rects;
 const M = (take: string) => TAKES[take].marks;
 /** Shot-relative time (s) at which a take's moment shows, for a shot that plays `from` at `rate`. */
 const when = (take: string, mark: number, from: number, rate = 1) => (mark - from) / rate;
+const PANE = { x: 1164, y: 93, w: 1396 };      // the plan pane, below the app header
+const TICKET = { x: 1164, y: 112, w: 1396 };   // the first ticket, inside the pane
+/** A slow push-in towards a view's centre, so a held shot is never a still frame. */
+const push = (v: { x: number; y: number; w: number }, k = 0.94) => ({ x: v.x + (v.w * (1 - k)) / 2, y: v.y + ((v.w / (1920 / 990)) * (1 - k)) / 2, w: v.w * k });
 
 function shots(): Shot[] {
   const out: Shot[] = [];
-  // Type an act -> "Did you mean" at real speed, then the form (5 stops, 300-900 rooms, as in the
-  // captured run) a little faster, ending on the press of "Scout the tour".
+  // Emerging-act mode in ~2.4 s: "Not this Maya" → emerging-act mode → sounds like Joanna Sternberg.
   {
-    const landing = { x: 330, y: 120, w: 1900 };   // between the header and the demo posters
-    const confirmV = { x: 310, y: 260, w: 1940 };  // the whole confirm card, form and button
-    const aFrom = 1.1, split = M("type").confirm + 0.85;
-    const mid = S.type + (split - aFrom);
+    const panel = { x: 470, y: 150, w: 1620 };
+    const from = M("type").confirm - 0.3, to = M("type").proxy + 0.5, rate = (to - from) / (S.hero - S.type);
     out.push({
-      start: S.type, end: mid, take: "type", from: aFrom,
-      keys: [{ t: 0, view: landing }, { t: when("type", M("type").confirm, aFrom) - 0.1, view: confirmV, dur: 0.8 }],
-    });
-    const bEnd = M("type").scoutClick + 0.45, bRate = (bEnd - split) / (S.hero - mid);
-    out.push({
-      start: mid, end: S.hero, take: "type", from: split, rate: bRate,
-      keys: [{ t: 0, view: confirmV }],
-      callouts: [{ text: "Confirmed on Qloo", target: R("type").candidate, at: 0.0, until: when("type", M("type").scoutClick, split, bRate) - 0.5, side: "right" }],
+      start: S.type, end: S.hero, take: "type", from, rate, keys: [{ t: 0, view: panel }],
+      callouts: [{ text: "Sounds like: Joanna Sternberg", target: R("type").soundsLike, at: when("type", M("type").proxy, from, rate) - 0.1, side: "right", box: false, line: false, pill: { x: 1330, y: 300 } }],
     });
   }
-  // Hero: the fan map lights up, full frame, slowed slightly (captured at ~50 fps).
+  // Hero: the fan map lights up (captured slowed); starts with the heat visible, slow push.
   {
-    // From just before the hotspots appear to just before the camera leaves for the route.
-    const from = M("map").markers - 0.1, until = M("map").route - 0.45, len = S.strip - S.hero;
-    out.push({ start: S.hero, end: S.strip, take: "map", from, rate: (until - from) / len, keys: [{ t: 0, view: full("map") }], tag: "Live Qloo data · fan hotspots across the US" });
+    const from = M("map").markers + 0.7, until = M("map").route - 0.45, len = S.route - S.hero;
+    out.push({ start: S.hero, end: S.route, take: "map", from, rate: (until - from) / len, keys: [{ t: 0, view: full("map") }, { t: 0.05, view: push(full("map"), 0.92), dur: len }], tag: "Live Qloo data · fans of Joanna Sternberg" });
   }
-  // The ranked strip and its cut line.
+  // The route draws, then the ranking.
   {
-    const from = M("app").settled - 1.0, rate = 1;
-    const strip = R("app").strip, cut = R("app").cut;
-    const cutBox = { x: cut.x - 18, y: cut.y - 6, width: 36, height: cut.height + 12 };
-    const top5 = wordAt("strip", "top") - S.strip;
+    const mid = S.route + 3.0;
+    out.push({ start: S.route, end: mid, take: "map", from: M("map").route - 0.4, keys: [{ t: 0, view: full("map") }], tag: "Every leg within a day's drive" });
+    const from = M("app").settled - 0.6;
     out.push({
-      start: S.strip, end: S.route, take: "app", from, rate,
-      // Framed from the gap above "The route" to the end of the pane: no row cut at an edge.
-      // Inside the plan pane only (no map fragments), from the gap above "Demo using..." to the gap under the chips.
-      keys: [{ t: 0, view: full("app") }, { t: 1.0, view: { x: 1164, y: 493, w: 1396 }, dur: 1.1 }],
-      callouts: [
-        { text: "Ranked by the room these fans like best", target: strip, at: 2.4, until: top5 - 0.1, side: "top", line: false, pill: { x: 1640, y: 604 } },
-        { text: "The top five make the cut", target: cutBox, at: top5, side: "bottom" },
-      ],
+      start: mid, end: S.ticket, take: "app", from,
+      keys: [{ t: 0, view: full("app") }, { t: 0.5, view: { x: 1164, y: Math.min(R("app").coverage.y - 120, 1320 - 1396 / (1920 / 990)), w: 1396 }, dur: 0.9 }],
+      callouts: [{ text: "Ranked by the room these fans like best", target: R("app").strip, at: 1.2, side: "top", box: true }],
     });
   }
-  // The route draws itself.
-  out.push({ start: S.route, end: S.ticket, take: "map", from: M("map").route - 0.4, keys: [{ t: 0, view: full("map") }] });
-  // A stop ticket: real venues, an opener with shared taste.
+  // A stop: real rooms, a support slot sized to the act; it ends as the pane starts to scroll.
   {
-    const from = M("ticket").scroll - (S.pitch - S.ticket);  // ends as the pane starts to scroll: the scroll is never on screen
-    const tv = { x: 1164, y: 112, w: 1396 };  // inside the plan pane: the ticket from its top to the pitch button
+    const from = M("ticket").scroll - (S.pitch - S.ticket);
     out.push({
       start: S.ticket, end: S.pitch, take: "ticket", from,
-      keys: [{ t: 0, view: full("ticket") }, { t: 0.5, view: tv, dur: 1.0 }],
+      keys: [{ t: 0, view: full("ticket") }, { t: 0.5, view: TICKET, dur: 1.0 }, { t: 1.6, view: push(TICKET), dur: 5.6 }],
       callouts: [
-        // Both leave before the pane scrolls to the pitch button.
-        { text: "Real venues", target: R("ticket").rooms, at: wordAt("ticket", "real") - S.ticket, until: when("ticket", M("ticket").scroll, from), side: "right", pill: { x: 1890, y: 650 } },
-        { text: "Opener with shared taste", target: R("ticket").opener, at: wordAt("ticket", "opener") - S.ticket, until: when("ticket", M("ticket").scroll, from), side: "top" },
+        { text: "Real rooms", target: R("ticket").rooms, at: wordAt("ticket", "real") - S.ticket, until: when("ticket", M("ticket").scroll, from), side: "right", pill: { x: 1890, y: 650 } },
+        { text: "Support slot, sized to the act", target: R("ticket").opener, at: wordAt("ticket", "support") - S.ticket, until: when("ticket", M("ticket").scroll, from), side: "top" },
       ],
     });
   }
-  // The pitch email.
+  // The request, addressed to the headliner's team.
   {
-    const from = 8.6;
+    const from = M("ticket").pitch - 0.6;
+    const v = around("ticket", R("ticket").dialog, 40, 1920 / 990, 1600);
     out.push({
-      start: S.pitch, end: S.scout, take: "ticket", from,
-      keys: [{ t: 0, view: full("ticket") }, { t: when("ticket", M("ticket").pitch, from) - 0.2, view: around("ticket", R("ticket").dialog, 60, 1920 / 990, 1900), dur: 0.9 }],
-      spot: { rect: R("ticket").dialog, at: when("ticket", M("ticket").pitch, from) - 0.1, pad: 0 },
-      callouts: [{ text: "Cites Qloo evidence", target: R("ticket").dialog, at: when("ticket", M("ticket").pitch, from) + 0.9, side: "top", box: false }],
+      start: S.pitch, end: S.agent, take: "ticket", from,
+      keys: [{ t: 0, view: v }, { t: 0.1, view: push(v, 0.92), dur: 4.3 }],
+      spot: { rect: R("ticket").dialog, at: 0, pad: 0 },
     });
   }
-  // Ask the scout -> the trace (sped up), cut just before the answer lands; resume once the proposal has
-  // scrolled fully into view (Apply is never seen clipped); Apply -> "Applied"; then a cut to the ticket
-  // after the pane's scroll has settled (no scroll and no half-hidden heading on screen).
+  // The agent route check: trace → "a stronger city that still drives" → Apply → the route redraws.
   {
-    const aFrom = 0.6, aTo = M("scout").answer - 0.25, bFrom = M("scout").applyReady;  // aTo: still "thinking"
-    // B ends on the click (its ripple has started): the page re-lays out as it applies.
-    const a = S.scout, b = 69.2, c = b + (M("scout").apply - bFrom), end = S.split;
+    const c = M("check");
+    const a = S.agent, b = wordAt("agent", "finds") - 0.15, d = wordAt("agent", "Apply") - 0.1, e = d + 1.4;
+    const aFrom = c.trace + 0.9, aRate = (c.answer - 0.3 - aFrom) / (b - a);
+    // The answered dock (verdict and Apply), framed from its recorded position.
+    const DOCK = { x: 1197, y: Math.min(1320 - (1330 * 990) / 1920, R("check").answer.y - 230), w: 1330 };
     out.push({
-      start: a, end: b, take: "scout", from: aFrom, rate: (aTo - aFrom) / (b - a),
-      keys: [{ t: 0, view: full("scout") }],
-      callouts: [{ text: "An agent runs Qloo tools", target: R("scout").dock, at: wordAt("scout", "agent") - a, side: "left", box: false, line: false }],
+      start: a, end: b, take: "check", from: aFrom, rate: aRate, keys: [{ t: 0, view: full("check") }],
+      callouts: [{ text: "An agent runs Qloo tools", target: R("check").dock, at: 0.4, side: "left", box: false, line: false, pill: { x: 1700, y: 1040 } }],
+    });
+    const bFrom = c.answer + 0.2, bRate = (c.applyReady - bFrom) / (d - b);
+    out.push({
+      start: b, end: d, take: "check", from: bFrom, rate: bRate, keys: [{ t: 0, view: DOCK }, { t: 0.1, view: { ...DOCK, y: DOCK.y + 24 }, dur: d - b }],
+      callouts: [{ text: "Stronger, still drivable", target: R("check").answer, at: 0.3, side: "left", box: false, line: false, pill: { x: 1900, y: R("check").answer.y - 70 } }],
     });
     out.push({
-      start: b, end: c, take: "scout", from: bFrom,
-      keys: [{ t: 0, view: full("scout") }],
-      // Leaves on the click: the proposal block changes shape once applied.
-      callouts: [{ text: "Server-checked change", target: R("scout").apply, at: 0.1, until: when("scout", M("scout").apply, bFrom) - 0.05, side: "left" }],
+      start: d, end: e, take: "check", from: c.applyReady, rate: (c.apply + 0.04 - c.applyReady) / (e - d), keys: [{ t: 0, view: DOCK }],
+      callouts: [{ text: "Checked by the server", target: R("check").apply, at: 0.1, side: "right", pill: { x: R("check").apply.x - 150, y: R("check").apply.y + R("check").apply.height + 60 } }],
     });
-    const cFrom = M("scout").swapped - 0.5;  // the pane's scroll has settled by then
     out.push({
-      start: c, end, take: "scout", from: cFrom,
-      keys: [{ t: 0, view: { x: 1203, y: 112, w: 1317 } }],  // inside the ticket card, above its pitch button
-      callouts: [{ text: "Opener swapped", target: R("scout").opener, at: 0.5, side: "top" }],
+      start: e, end: S.holds, take: "check", from: c.applied - 0.1, rate: Math.max(1, (c.redrawn + 1.5 - c.applied) / (S.holds - e)),
+      keys: [{ t: 0, view: full("check") }], tag: "Route redrawn: Washington, DC in, Albany out",
+    });
+  }
+  // Joe List: the route check holds, and says why.
+  {
+    const h = M("holds");
+    out.push({
+      start: S.holds, end: S.phone, take: "holds", from: h.answer - 1.6, keys: [{ t: 0, view: full("holds") }],
+      callouts: [{ text: "Route holds: no change for show", target: R("holds").answer, at: 1.4, side: "top", box: false, line: false, pill: { x: 1700, y: R("holds").answer.y - 62 } }],
+    });
+  }
+  // Receipts: the toggle, then the exact Qloo request.
+  {
+    const r = M("receipts"), from = r.toggle - 0.5, rate = (r.request + 0.6 - from) / (S.how - S.receipts);
+    const reqView = { x: 1270, y: 93, w: 1250 };
+    out.push({
+      start: S.receipts, end: S.how, take: "receipts", from, rate,
+      keys: [{ t: 0, view: PANE }, { t: when("receipts", r.expand, from, rate) - 0.2, view: reqView, dur: 0.8 }],
+      callouts: [{ text: "The exact Qloo request", target: R("receipts").request, at: when("receipts", r.request, from, rate) - 0.2, side: "bottom" }],
     });
   }
   return out;
 }
 
+/** The phone shot: the 390 px layout in a simple device frame, beside a caption. */
+const PhoneShot = ({ start }: { start: number }) => {
+  const frame = useCurrentFrame();
+  const t = frame / FPS;
+  const p = ease(Math.min(1, t / 0.5));
+  const W = 400, Hh = 866;
+  return (
+    <AbsoluteFill style={{ height: PIC_H, background: C.bg }}>
+      <div style={{ position: "absolute", left: 660, top: (PIC_H - Hh - 24) / 2, width: W + 24, height: Hh + 24, borderRadius: 52, background: "#000", border: `2px solid ${C.line}`,
+        boxShadow: "0 30px 80px rgba(0,0,0,.6)", padding: 12, opacity: p, transform: `translateY(${(1 - p) * 30}px)` }}>
+        <div style={{ width: W, height: Hh, borderRadius: 40, overflow: "hidden", position: "relative" }}>
+          <Footage take="phone" from={M("phone").sheet - 0.4} width={W} height={Hh} keys={[{ t: 0, view: { x: 0, y: 0, w: 780 } }]} />
+        </div>
+      </div>
+      <div style={{ position: "absolute", left: 1150, top: 380, width: 600, fontFamily: sans, fontWeight: 700, fontSize: 40, color: C.ink, lineHeight: 1.25, opacity: ease(Math.min(1, Math.max(0, (t - 0.4) / 0.5))) }}>
+        On a phone, the route check<br /><span style={{ color: C.neon }}>opens by itself.</span>
+      </div>
+      <span style={{ display: "none" }}>{start}</span>
+    </AbsoluteFill>
+  );
+};
+
 const ShotView = ({ s }: { s: Shot }) => {
   const frame = useCurrentFrame();
   const t = frame / FPS;
-  const tagP = s.tag ? ease(Math.min(1, Math.max(0, (t - 1.6) / 0.5))) : 0;
+  const tagP = s.tag ? ease(Math.min(1, Math.max(0, (t - 0.8) / 0.5))) : 0;
   return (
     <AbsoluteFill style={{ height: PIC_H }}>
       <Footage take={s.take} from={s.from} rate={s.rate} keys={s.keys} callouts={s.callouts} spot={s.spot} />
@@ -130,21 +153,26 @@ const ShotView = ({ s }: { s: Shot }) => {
 };
 
 export const Story = () => {
-  const frame = useCurrentFrame();
-  const fadeOut = interpolate(frame, [f(END) - 15, f(END)], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
   const seq = (start: number, end: number, node: React.ReactNode, key: string) => (
     <Sequence key={key} from={f(start)} durationInFrames={f(end) - f(start)}>{node}</Sequence>
   );
   return (
     <AbsoluteFill style={{ background: C.bg }}>
       {seq(0, S.persona, <Hook start={0} />, "hook")}
-      {seq(S.persona, S.type, <PersonaTurn start={S.persona} />, "persona")}
+      {seq(S.persona, S.type, <Persona start={S.persona} />, "persona")}
       {shots().map((s, i) => seq(s.start, s.end, <ShotView s={s} />, `shot${i}`))}
-      {seq(S.split, S.how, <Split start={S.split} />, "split")}
+      {seq(S.phone, S.whynot, <PhoneShot start={S.phone} />, "phone")}
+      {seq(S.whynot, S.receipts, (
+        <WhyNot start={S.whynot}>
+          <Footage take="sponsor" from={M("sponsor").sponsor - 1.2} width={960} height={780}
+            keys={[{ t: 0, view: around("sponsor", R("sponsor").sponsor, 120, 960 / 780, 1300) }]}
+            callouts={[{ text: "", target: R("sponsor").sponsor, at: wordAt("whynot", "sponsors") - S.whynot, side: "top", box: true }]} />
+        </WhyNot>
+      ), "whynot")}
       {seq(S.how, S.close, <How start={S.how} />, "how")}
+      {/* The end card holds to the last frame: the video never ends on black. */}
       {seq(S.close, END, <Close start={S.close} />, "close")}
       <Captions />
-      <AbsoluteFill style={{ background: "#000", opacity: fadeOut }} />
     </AbsoluteFill>
   );
 };

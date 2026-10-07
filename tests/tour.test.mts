@@ -42,7 +42,10 @@ test("a run streams cities and every stop, then a plan whose citations all exist
   // Cities come from the country-wide fan heatmap, snapped to touring markets.
   assert.equal(plan.coverage.basis, "hotspots");
   assert.ok(plan.coverage.hotspotCells > 0 && plan.coverage.hotspotMarkets >= 4);
-  assert.ok(plan.stops.every((s: any) => s.city.hotspot && ids.has(s.city.hotspot.evidence)), "every stop is near a fan hotspot");
+  // Stops are fan-hotspot cities first, filled with nearby touring markets so the run stays drivable.
+  const hot = plan.stops.filter((s: any) => s.city.hotspot);
+  assert.ok(hot.length >= 2 && hot.every((s: any) => ids.has(s.city.hotspot.evidence)), "the tour is built on fan hotspots");
+  assert.ok(plan.coverage.regional && plan.coverage.regional.longestLegKm <= plan.coverage.regional.maxLegKm, "no leg over the limit");
   assert.equal(new Set(plan.stops.map((s: any) => s.opener.entityId)).size, plan.stops.length, "each stop suggests a different opener");
 });
 
@@ -100,8 +103,12 @@ test("model text that cites fake evidence or makes unsupported claims is relabel
   assert.equal(plan.theme[0].kind, "interpretation");
   assert.equal(plan.withheld.length, 2);
   const s1 = plan.stops.find((s: any) => s.stopId === "s1");
-  assert.equal(s1.why, undefined);
-  assert.equal(s1.pitch, undefined);
+  // A withheld why or pitch is replaced by the code-written one (labelled TEMPLATE), never left blank.
+  assert.equal(s1.why?.kind, "template");
+  assert.doesNotMatch(s1.why?.text ?? "", /sell out/);
+  // A withheld pitch is replaced by the code-written one (labelled TEMPLATE), never left blank.
+  assert.equal(s1.pitch?.kind, "template");
+  assert.doesNotMatch(s1.pitch?.text ?? "", /affluent/);
 });
 
 test("a failing model falls back to scripted text and says so", async () => {
@@ -226,10 +233,10 @@ test("rooms that are not venues (a farm, a heritage railway) are dropped before 
   assert.equal(dropped, 2);
 });
 
-test("the README and Devpost request excerpts match the stored Big Thief capture (regenerate with npm run docs:excerpt)", async () => {
+test("the README and Devpost request excerpts match the stored lead-demo capture (regenerate with npm run docs:excerpt)", async () => {
   const { readFileSync } = await import("node:fs");
   const { requestExcerpt, EXCERPT_START, EXCERPT_END } = await import("../src/lib/tour/excerpt.ts");
-  const excerpt = requestExcerpt(JSON.parse(readFileSync(new URL("../public/presets/us-indie-band.json", import.meta.url), "utf8")));
+  const excerpt = requestExcerpt(JSON.parse(readFileSync(new URL("../public/presets/us-emerging.json", import.meta.url), "utf8")));
   for (const file of ["../README.md", "../docs/SUBMISSION.md"]) {
     const doc = readFileSync(new URL(file, import.meta.url), "utf8");
     const block = doc.slice(doc.indexOf(EXCERPT_START) + EXCERPT_START.length, doc.indexOf(EXCERPT_END)).trim();
@@ -251,12 +258,17 @@ test("plain-language notes have no empty clauses, stray spaces or doubled punctu
   }
   // An empty or zero clause never leaves a gap.
   assert.doesNotMatch(coverageText({ basis: "hotspots", hotspotCells: 20, remoteCells: 0, hotspotMarkets: 7, roomFallback: false, scored: 6, unscored: [], limited: false }, "United Kingdom"), bad);
+  const missing = coverageText({ basis: "hotspots", heatmap: "missing", hotspotCells: 0, remoteCells: 0, hotspotMarkets: 0, roomFallback: true, scored: 6, unscored: [], limited: true }, "United States");
+  assert.match(missing, /didn't answer in time/);
+  assert.match(coverageText({ basis: "hotspots", hotspotCells: 20, remoteCells: 20, hotspotMarkets: 0, roomFallback: true, scored: 6, unscored: [], limited: true }, "United States"), /rooms-led plan/);
+  assert.doesNotMatch(missing, /found 0 hotspots|only 0/);
+  assert.match(coverageText({ basis: "hotspots", heatmap: "saved", heatmapSavedAt: "2026-10-05T10:00:00Z", hotspotCells: 20, remoteCells: 0, hotspotMarkets: 7, roomFallback: false, scored: 6, unscored: [], limited: false }, "United States"), /saved on 2026-10-05/);
 });
 
 test("source line stays precise after a scout change: a captured plan is never relabelled as live data", async () => {
   const { editedOrigin, sourceLabel, baseOrigin } = await import("../src/lib/tour/source-label.ts");
   const d = () => "Oct 6";
-  const preset = { kind: "preset" as const, slug: "us-indie-band", capturedAt: "2026-10-06T00:00:00Z" };
+  const preset = { kind: "preset" as const, slug: "us-emerging", capturedAt: "2026-10-06T00:00:00Z" };
   assert.equal(sourceLabel(preset, d), "Captured from live Qloo data on Oct 6");
   // A recorded scout answer applied (no new Qloo calls).
   const applied = editedOrigin(preset, false);
@@ -267,4 +279,76 @@ test("source line stays precise after a scout change: a captured plan is never r
   assert.equal(sourceLabel(editedOrigin(editedOrigin(preset, true), false), d), "Captured from live Qloo data on Oct 6 · scout change from live Qloo data");
   // A live run stays a live run.
   assert.equal(sourceLabel(editedOrigin({ kind: "live" }, false), d), "Live Qloo data");
+});
+
+test("routes are regional: no leg over the limit, the densest hotspot region, fewer stops rather than a zig-zag", async () => {
+  const { pickStops, chooseRegion, bestOrder, legs, MAX_LEG_KM } = await import("../src/lib/tour/region.ts");
+  const { MARKETS } = await import("../src/lib/markets.ts");
+  const mk = (n: string) => MARKETS.find((m) => m.name === n)!;
+  // The judge's live run: hotspots scattered over Salt Lake City, Austin, Madison and New England.
+  const hot = ["Salt Lake City", "Austin", "Madison", "Northampton", "Burlington", "Boston", "Albany"].map((n) => ({ market: mk(n), cells: 1 }));
+  const region = chooseRegion(hot);
+  assert.ok(["Northampton", "Albany", "Boston", "Burlington"].includes(region.seed.name), region.seed.name);
+  assert.deepEqual(region.elsewhere.map((h) => h.market.name).sort(), ["Austin", "Madison", "Salt Lake City"]);
+  // Mark Normand's old route (Denver → Austin → Providence → Burlington) cannot be picked.
+  const cities = ["Denver", "Austin", "Providence", "Burlington", "Boston", "Albany"].map((n, i) => ({ ...mk(n), name: n, affinity: 0.9 - i * 0.003 }));
+  const { picked, longestLegKm } = pickStops(cities, 4);
+  assert.deepEqual(picked.map((c) => c.name).sort(), ["Albany", "Boston", "Burlington", "Providence"]);
+  assert.ok(longestLegKm <= MAX_LEG_KM);
+  const pts = picked.map((c) => ({ lat: c.lat!, lng: c.lng! }));
+  assert.ok(Math.max(...legs(pts, bestOrder(pts))) <= MAX_LEG_KM);
+  // Only two cities within reach: two stops, not four across the country.
+  const scattered = ["Seattle", "Denver", "Austin", "Atlanta", "Boston", "Providence"].filter((n) => mk(n)).map((n, i) => ({ ...mk(n), name: n, affinity: 0.9 - i * 0.01 }));
+  assert.deepEqual(pickStops(scattered, 4).picked.map((c) => c.name).sort(), ["Boston", "Providence"]);
+});
+
+test("the route says where it stays, how far the longest drive is, and where else fans are", async () => {
+  const { coverageText } = await import("../src/lib/tour/coverage-text.ts");
+  const base = { basis: "hotspots" as const, hotspotCells: 20, remoteCells: 0, hotspotMarkets: 7, roomFallback: false, scored: 6, unscored: [], limited: false };
+  const text = coverageText({ ...base, regional: { around: "Northampton", maxLegKm: 400, longestLegKm: 280, stops: 3, asked: 4, elsewhere: ["Austin", "Madison"] } }, "United States");
+  assert.match(text, /stays around Northampton: the longest drive between stops is about 350 km \(4 h\)/);
+  assert.match(text, /Only 3 strong cities sit within a day's drive/);
+  assert.match(text, /Fans also concentrate around Austin and Madison: a second run\./);
+  assert.match(coverageText({ ...base, anchorsAbsent: ["New York", "Los Angeles"] }, "United States"), /New York and Los Angeles are not among these fans' hotspots, so this run finds the secondary markets/);
+  const { routeOrder } = await import("../src/lib/tour/plan.ts");
+  const stop = (name: string, lat: number, lng: number, affinity: number) => ({ stopId: name, city: { entityId: name, name, affinity, lat, lng, evidence: "Q1" }, venues: [] }) as never;
+  const order = routeOrder([stop("Boston", 42.36, -71.06, 0.9), stop("Albany", 42.65, -73.76, 0.8), stop("Northampton", 42.33, -72.64, 0.85)], { lat: 42.65, lng: -73.9 });
+  assert.equal((order[0] as { city: { name: string } }).city.name, "Albany", "the route starts nearest the start city");
+});
+
+test("route check geometry: Providence can replace Portland, ME on a Burlington–Philadelphia run (shorter drive)", async () => {
+  const { swapFits } = await import("../src/lib/tour/region.ts");
+  const { MARKETS } = await import("../src/lib/markets.ts");
+  const pt = (n: string) => { const m = MARKETS.find((x) => x.name === n)!; return { lat: m.lat, lng: m.lng }; };
+  const stops = ["Burlington", "Portland, ME", "Boston", "New York", "Philadelphia"].map(pt);
+  const r = swapFits(stops, 1, pt("Providence"));
+  assert.ok(r.fits && r.extraKm < 0, JSON.stringify(r));
+  assert.equal(swapFits(stops, 1, pt("Chicago")).fits, false, "a far city breaks the run");
+});
+
+test("the AI state is reported as it really is (no key means template)", async () => {
+  const { llmStatus } = await import("../src/lib/llm.ts");
+  const saved = { p: process.env.LLM_PROVIDER, c: process.env.CLAUDE_API_KEY, g: process.env.GEMINI_API_KEY };
+  process.env.LLM_PROVIDER = "claude"; delete process.env.CLAUDE_API_KEY; delete process.env.GEMINI_API_KEY;
+  try {
+    assert.deepEqual(llmStatus(), { provider: "claude", available: false, reason: "CLAUDE_API_KEY is not set" });
+  } finally {
+    for (const [k, v] of [["LLM_PROVIDER", saved.p], ["CLAUDE_API_KEY", saved.c], ["GEMINI_API_KEY", saved.g]] as const) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
+});
+
+test("openers a booker would not pitch are skipped: supergroups, and actor-first people for a comedian", async () => {
+  const { unlikelyOpener } = await import("../src/lib/tour/pipeline.ts");
+  assert.equal(unlikelyOpener("An American country supergroup formed to amplify women's voices in country music.", false), true);
+  assert.equal(unlikelyOpener("Canadian actor and comedian", true), true);
+  assert.equal(unlikelyOpener("American actress, comedian, author and television personality", true), true);
+  assert.equal(unlikelyOpener("American comedian and actor", true), false);
+  assert.equal(unlikelyOpener("American actor and stand-up comedian", true), false);
+  assert.equal(unlikelyOpener("American singer-songwriter and actress known for indie music.", false), false);
+});
+
+test("a comedian's rooms lead with comedy clubs", async () => {
+  const { COMEDY_ROOM } = await import("../src/lib/tour/cities.ts");
+  for (const n of ["Comedy Cellar", "Laugh Boston", "Helium Comedy Club", "Stand Up NY", "Punch Line Philly", "Improv Asylum"]) assert.match(n, COMEDY_ROOM);
+  for (const n of ["Littlefield", "Union Hall", "The Bell House", "Parkside Lounge"]) assert.doesNotMatch(n, COMEDY_ROOM);
 });

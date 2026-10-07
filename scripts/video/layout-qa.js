@@ -21,12 +21,14 @@
   if (header) { const r = R(header); if (r.top < -0.5 || r.left < -0.5 || r.right > vw + 0.5) issues.push('header not fully in frame'); }
   // The plan view starts right under the header (no empty band).
   const mapBox = document.querySelector('.map-box');
-  if (header && mapBox && innerWidth >= 1024) { const gap = mapBox.getBoundingClientRect().top - header.getBoundingClientRect().bottom; if (Math.abs(gap) > 2) issues.push(`gap of ${Math.round(gap)} px between the header and the map`); }
+  if (header && mapBox && innerWidth >= 1024 && document.getElementById('plan-scroll')) { const gap = mapBox.getBoundingClientRect().top - header.getBoundingClientRect().bottom; if (Math.abs(gap) > 2) issues.push(`gap of ${Math.round(gap)} px between the header and the map`); }
   // Text clipped by the frame or by its pane (plan pane top edge, map pane, dock).
   for (const el of textLeaves) {
     const r = R(el), t = el.textContent.trim().slice(0, 40);
     if (el.closest('#__cursor')) continue;
-    if (r.left < -1 || r.right > vw + 1) issues.push(`text cut by the frame edge: "${t}"`);
+    // A horizontally scrolling strip (the phone's stop chips) is meant to run past the edge.
+    const hScroll = (() => { for (let a = el.parentElement; a; a = a.parentElement) { const ox = getComputedStyle(a).overflowX; if ((ox === 'auto' || ox === 'scroll') && a.scrollWidth > a.clientWidth) return true; } return false; })();
+    if (!hScroll && (r.left < -1 || r.right > vw + 1)) issues.push(`text cut by the frame edge: "${t}"`);
     if (pane && pane.contains(el) && r.raw) { const p = pane.getBoundingClientRect(); if (r.raw.top < p.top - 1 && r.raw.bottom > p.top + 2) issues.push(`text cut at the top of the plan pane: "${t}"`); }
     if (map && el.closest('.maplibregl-marker')) { const m = R(map); if (r.left < m.left - 1 || r.right > m.right + 1 || r.top < m.top - 1 || r.bottom > m.bottom + 1) issues.push(`map label cut by the pane edge: "${t}"`); }
     const cs = getComputedStyle(el);

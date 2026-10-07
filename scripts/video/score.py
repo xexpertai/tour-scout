@@ -123,7 +123,8 @@ def section(t):
     return s
 
 
-GROOVE = {"hero", "strip", "route", "ticket", "pitch", "scout", "how"}
+GROOVE = {"hero", "route", "ticket", "pitch", "agent", "holds", "phone", "how"}
+BREAK = {"whynot", "receipts"}  # the breakdown: pad, keys and pulse, no kit
 
 # ---------------------------------------------------------------- instruments
 def pad_note(m, dur, bright):
@@ -245,7 +246,7 @@ for b in range(TOTAL_BARS):
     if b >= FINAL_BAR:
         span = (END - t0) / BAR
     sec = section(t0)
-    bright = {"hook": 0.12, "persona": 0.22, "turn": 0.5, "split": 0.32}.get(sec, 0.55)
+    bright = {"hook": 0.12, "persona": 0.3, "whynot": 0.32, "receipts": 0.32}.get(sec, 0.55)
     if b == LOGO_BAR - 1 or b == FINAL_BAR - 1:
         bright = 0.75
     if b >= FINAL_BAR:
@@ -259,7 +260,7 @@ MOTIF = {"Am9": [76, 72, 71], "Fmaj9": [72, 69, 67], "Cadd9": [74, 72, 67], "G6"
          "Fmaj7": [72, 69, 65], "G": [71, 67, 74], "Am7": [72, 67, 69], "C": [72, 67, 76]}
 for b in range(TOTAL_BARS):
     t0, sec = bar_t(b), section(bar_t(b))
-    if sec in ("hook", "persona") or (sec == "turn" and b < LOGO_BAR - 1) or sec == "split":
+    if sec in ("hook", "persona") or sec in BREAK:
         if sec == "hook" and b == 0:
             add(ep, ep_note(76, 0.55, 3.5), t0 + 0.05, pan=-0.2)
             add(ep, ep_note(69, 0.5, 3.5), t0 + 2.65, pan=0.15)  # under "Nobody came": a lone low note
@@ -279,7 +280,7 @@ for b in range(TOTAL_BARS):
         t = t0 + k * BEAT / 2
         if b in (LOGO_BAR - 1, FINAL_BAR - 1) and k >= 6:
             break
-        vel = (0.9 if k % 2 == 0 else 0.6) * (0.55 if section(t0) in ("persona", "turn") else 1.0)
+        vel = (0.9 if k % 2 == 0 else 0.6) * (0.55 if section(t0) in ("persona",) else 1.0)
         m = root + (7 if k in (3, 7) else 0)
         add(pulse, pluck(m, vel, decay=9, cutoff=900 + 500 * (section(t0) in GROOVE)), t, pan=0.0, gain=0.2)
 
@@ -368,8 +369,8 @@ mix = sum(stems[k] * g for k, g in gains.items())
 
 # Fader rides: the intro sits back (it's under a quiet hook), the turn swells into the logo hit, the
 # breakdown dips a little. Gains in dB at times (s); linear in dB between points.
-RIDE = [(0, -5), (TL["sections"][2][1], -5), (HIT["logo"] - 0.05, -1), (HIT["logo"], 0),
-        (dict(TL["sections"])["split"], 0), (dict(TL["sections"])["split"] + 1, -2.5), (HIT["howLand"] - 2.4, -2.5), (HIT["howLand"], 0)]
+RIDE = [(0, -5), (dict(TL["sections"])["persona"], -5), (HIT["logo"] - 0.05, -1), (HIT["logo"], 0),
+        (dict(TL["sections"])["whynot"], 0), (dict(TL["sections"])["whynot"] + 1, -2.5), (HIT["howLand"] - 2.4, -2.5), (HIT["howLand"], 0)]
 tt = np.arange(mix.shape[1]) / SR
 mix *= 10 ** (np.interp(tt, [p[0] for p in RIDE], [p[1] for p in RIDE]) / 20)
 

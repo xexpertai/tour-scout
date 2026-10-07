@@ -1,7 +1,10 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useEffect, useState, type FormEvent } from "react";
-import { PRESETS, type CapturedRun, type Preset } from "@/lib/tour/presets";
+import type { MapCity, MapStop } from "./TourMap";
+import { LEAD_PRESET, PRESETS, type CapturedRun, type Preset } from "@/lib/tour/presets";
+import { possessive } from "@/lib/text";
 import type { ArtistKind, TourPlan } from "@/lib/tour/types";
 import { fitDisplay } from "./atoms";
 
@@ -60,73 +63,45 @@ function Flyer({ preset, index, onPlay }: { preset: Preset; index: number; onPla
   );
 }
 
-type Pt = { x: number; y: number };
+const TourMap = dynamic(() => import("./TourMap"), { ssr: false, loading: () => <div className="map-box h-full w-full" /> });
+
 /**
- * The landing's moving picture: the real Big Thief capture, looping. Fan heat blooms, the stops
- * pop in, the route draws, then it rests and starts again. Reduced motion shows the final frame.
+ * The landing's moving picture: the lead demo's real capture on the real map, looping. Fan heat
+ * blooms, the scored cities appear, the route draws, it rests, then starts again. Not interactive:
+ * a tap opens the demo. Reduced motion shows the finished route.
  */
-function RoutePreview() {
+function RoutePreview({ onOpen }: { onOpen: () => void }) {
   const [plan, setPlan] = useState<TourPlan>();
-  const [tick, setTick] = useState(0);
+  const [phase, setPhase] = useState(0);
   useEffect(() => {
     let alive = true;
-    fetch("/presets/us-indie-band.json").then((r) => r.json()).then((run: CapturedRun) => {
+    fetch(`/presets/${LEAD_PRESET}.json`).then((r) => r.json()).then((run: CapturedRun) => {
       const e = run.events.find((x) => (x.event as { type: string }).type === "plan")?.event as { plan: TourPlan } | undefined;
       if (alive && e) setPlan(e.plan);
     }).catch(() => undefined);
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const t = reduce ? undefined : setInterval(() => setTick((n) => n + 1), 9000);
-    return () => { alive = false; if (t) clearInterval(t); };
+    return () => { alive = false; };
   }, []);
-  const W = 560, H = 440, P = 70;
-  const stops = plan ? [...plan.stops].sort((a, b) => a.order - b.order).filter((s) => s.city.lat !== undefined) : [];
-  if (!stops.length) return <div className="h-[340px] rounded-2xl border border-line bg-[var(--map-bg)] sm:h-[440px]" aria-hidden />;
-  const lats = stops.map((s) => s.city.lat!), lngs = stops.map((s) => s.city.lng!);
-  const [minLat, maxLat, minLng, maxLng] = [Math.min(...lats) - 1.2, Math.max(...lats) + 1.2, Math.min(...lngs) - 1.6, Math.max(...lngs) + 1.6];
-  const k = Math.cos(((minLat + maxLat) / 2) * Math.PI / 180);
-  const sx = (W - 2 * P) / ((maxLng - minLng) * k), sy = (H - 2 * P) / (maxLat - minLat), sc = Math.min(sx, sy);
-  const proj = (lat: number, lng: number): Pt => ({ x: P + (lng - minLng) * k * sc + ((W - 2 * P) - (maxLng - minLng) * k * sc) / 2, y: P + (maxLat - lat) * sc + ((H - 2 * P) - (maxLat - minLat) * sc) / 2 });
-  const cells = (plan?.coverage?.cells ?? []).filter((c) => c.lat > minLat && c.lat < maxLat && c.lng > minLng && c.lng < maxLng);
-  const pts = stops.map((s) => proj(s.city.lat!, s.city.lng!));
-  // Greedy label placement: right, left, below, above, whichever overlaps no pin and no placed label.
-  type Box = { x: number; y: number; w: number; h: number };
-  const hit = (a: Box, b: Box) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
-  const taken: Box[] = pts.map((p) => ({ x: p.x - 15, y: p.y - 15, w: 30, h: 30 }));
-  const labels = pts.map((p, i) => {
-    const w = (stops[i].city.name.length + 3) * 10.5, h = 20;
-    const options = [
-      { box: { x: p.x + 20, y: p.y - 10, w, h }, x: p.x + 20, y: p.y + 6, anchor: "start" },
-      { box: { x: p.x - 20 - w, y: p.y - 10, w, h }, x: p.x - 20, y: p.y + 6, anchor: "end" },
-      { box: { x: p.x - w / 2, y: p.y + 18, w, h }, x: p.x, y: p.y + 34, anchor: "middle" },
-      { box: { x: p.x - w / 2, y: p.y - 38, w, h }, x: p.x, y: p.y - 22, anchor: "middle" },
-    ];
-    const pick = options.find((o) => o.box.x > 4 && o.box.x + o.box.w < W - 4 && !taken.some((t) => hit(t, o.box))) ?? options[0];
-    taken.push(pick.box);
-    return pick;
-  });
-  const d = pts.map((p, i) => `${i ? "L" : "M"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+  const [reduce] = useState(() => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  useEffect(() => {
+    if (!plan || reduce) return;
+    // 0 heat → 1 cities scored → 2 stops → 3 route, hold, repeat.
+    const steps = [1600, 1400, 1200, 6000];
+    const t = setTimeout(() => setPhase((p) => (p + 1) % 4), steps[phase]);
+    return () => clearTimeout(t);
+  }, [plan, phase, reduce]);
+  if (reduce && phase !== 3) setPhase(3);
+  const stops = plan ? [...plan.stops].sort((a, b) => a.order - b.order) : [];
+  const cities: MapCity[] = phase === 1 && plan ? (plan.candidates ?? plan.stops.map((x) => x.city)).filter((c) => c.lat !== undefined && c.lng !== undefined)
+    .map((c) => ({ id: c.entityId, name: c.name, lat: c.lat!, lng: c.lng!, affinity: c.affinity })) : [];
+  const mapStops: MapStop[] = phase >= 2 ? stops.filter((x) => x.city.lat !== undefined).map((x) => ({ id: x.stopId, order: x.order, name: x.city.name, lat: x.city.lat!, lng: x.city.lng! })) : [];
   return (
     <figure className="relative">
-      <svg key={tick} viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`Big Thief's captured route: ${stops.map((s) => s.city.name).join(", ")}`}
-        className="preview h-auto w-full rounded-2xl border border-line bg-[var(--map-bg)]">
-        <defs>
-          <radialGradient id="heat"><stop offset="0" stopColor="#ffe3cc" stopOpacity=".95" /><stop offset=".35" stopColor="#ff2e88" stopOpacity=".55" /><stop offset="1" stopColor="#ff6b1a" stopOpacity="0" /></radialGradient>
-          <pattern id="dots" width="16" height="16" patternUnits="userSpaceOnUse"><circle cx="1.5" cy="1.5" r="1.1" fill="currentColor" opacity=".16" /></pattern>
-        </defs>
-        <rect width={W} height={H} fill="url(#dots)" className="text-ink" />
-        {cells.map((c, i) => { const p = proj(c.lat, c.lng); return <circle key={i} className="pv-heat" style={{ animationDelay: `${0.15 * i}s` }} cx={p.x} cy={p.y} r={70} fill="url(#heat)" />; })}
-        <path className="pv-route" d={d} fill="none" stroke="var(--neon)" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" pathLength={1} />
-        {pts.map((p, i) => (
-          <g key={i} className="pv-stop" style={{ animationDelay: `${1.6 + i * 0.25}s` }}>
-            <circle cx={p.x} cy={p.y} r="13" fill="var(--accent)" stroke="var(--map-bg)" strokeWidth="3" />
-            <text x={p.x} y={p.y + 4.5} textAnchor="middle" fontSize="13" fontWeight="700" fill="var(--accent-ink)" fontFamily="var(--font-mono)">{i + 1}</text>
-            <text x={labels[i].x} y={labels[i].y} textAnchor={labels[i].anchor as "start" | "end" | "middle"} fontSize="19" fill="var(--ink)" fontFamily="var(--font-display)" style={{ textTransform: "uppercase", paintOrder: "stroke", stroke: "var(--map-bg)", strokeWidth: 5 }}>
-              {stops[i].city.name} <tspan fill="var(--accent)">{Math.round(stops[i].city.affinity * 100)}</tspan>
-            </text>
-          </g>
-        ))}
-      </svg>
-      <figcaption className="mt-2 text-sm text-muted">The Big Thief demo, from live Qloo data: fan hotspots, then the {stops.length}-stop route.</figcaption>
+      <button type="button" onClick={onOpen} aria-label={plan ? `Open the ${plan.artist.name} demo: ${stops.map((x) => x.city.name).join(", ")}` : "Open the lead demo"}
+        className="map-box relative block h-[300px] w-full overflow-hidden rounded-2xl border border-line text-left sm:h-[380px]">
+        {plan && <div className="pointer-events-none absolute inset-0"><TourMap cities={cities} stops={mapStops} cells={plan.coverage?.cells} routeFinal={phase === 3} /></div>}
+        <span className="absolute bottom-3 left-3 rounded-full bg-bg/85 px-3 py-1.5 text-xs font-semibold text-ink">▶ Open this demo</span>
+      </button>
+      <figcaption className="mt-2 text-sm text-muted">{plan ? `${possessive(plan.artist.name)} demo (a fictional act, fans of ${plan.artist.proxyOf?.join(", ") ?? plan.artist.name}), from live Qloo data: fan hotspots, then the ${stops.length}-stop route.` : "Loading the demo…"}</figcaption>
     </figure>
   );
 }
@@ -144,8 +119,13 @@ export function Landing({ onSearch, onPreset, busy }: { onSearch: (name: string,
             Tour Scout reads Qloo&apos;s taste graph to find where an act&apos;s audience actually is, then picks the cities, rooms and openers, and drafts the pitch.
           </p>
           <div className="mt-7"><SearchBox onSubmit={onSearch} busy={busy} /></div>
+          {/* Phones: the demos sit below the fold, so offer the lead one right here. */}
+          <button type="button" onClick={() => onPreset(LEAD_PRESET)}
+            className="mt-4 min-h-12 w-full rounded-xl border-2 border-neon px-5 font-display text-lg uppercase tracking-wide text-ink sm:hidden">
+            ▶ See a demo tour <span className="font-sans text-sm normal-case text-muted">· no sign-up</span>
+          </button>
         </div>
-        <RoutePreview />
+        <RoutePreview onOpen={() => onPreset(LEAD_PRESET)} />
       </section>
 
       <section aria-labelledby="demos" className="pb-14">

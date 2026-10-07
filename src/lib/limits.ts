@@ -1,7 +1,11 @@
 /**
  * Quota protection for live judging: per-client sliding-window limits, a global daily cap on live
- * runs, and a 24-hour cache of identical runs. In-memory, so it applies per server instance.
+ * runs, and a 24-hour cache of identical runs. The hourly limits are in memory (per instance); the
+ * daily cap is also saved under DATA_DIR, so a restart or scale-to-zero cannot reset it.
  */
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
+
 const HOUR = 60 * 60 * 1000;
 
 export const LIMITS = {
@@ -15,7 +19,8 @@ export const LIMITS = {
 const DAILY_RUN_CAP = Number(process.env.TOUR_DAILY_CAP) || 150;
 
 const hits = new Map<string, number[]>();
-let day = { date: "", runs: 0 };
+let day: { date: string; runs: number } | undefined;
+const dayFile = () => (process.env.DATA_DIR ? path.join(process.env.DATA_DIR, "tour-usage.json") : undefined);
 
 /**
  * The client address as seen by the host's proxy. Hosts like Fly.io and Railway set
@@ -47,11 +52,21 @@ export function take(kind: keyof typeof LIMITS, key: string, now = Date.now()): 
 /** Counts one live run against the server-wide daily cap. */
 export function takeDailyRun(now = new Date()): LimitResult {
   const date = now.toISOString().slice(0, 10);
-  if (day.date !== date) day = { date, runs: 0 };
+  const file = dayFile();
+  if (!day && file) {
+    try { day = JSON.parse(readFileSync(/*turbopackIgnore: true*/ file, "utf8")); } catch { /* first run */ }
+  }
+  if (!day || day.date !== date) day = { date, runs: 0 };
   if (day.runs >= DAILY_RUN_CAP) {
     return { ok: false, retryAfterSec: 3600, message: "Tour Scout has used today's live-data budget. The demo tours still work, and live tours resume tomorrow (UTC)." };
   }
   day.runs++;
+  if (file) {
+    try {
+      mkdirSync(/*turbopackIgnore: true*/ path.dirname(file), { recursive: true });
+      writeFileSync(/*turbopackIgnore: true*/ file, JSON.stringify(day));
+    } catch { /* the cap still works in memory */ }
+  }
   return { ok: true };
 }
 

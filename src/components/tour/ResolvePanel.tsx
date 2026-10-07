@@ -32,10 +32,11 @@ function CandidateRow({ c, selected, onSelect }: { c: Candidate; selected: boole
   );
 }
 
-function TripOptions({ onSubmit, label }: { onSubmit: (o: Pick<TourInput, "region" | "candidateCities" | "stops" | "capacity">) => void; label: string }) {
+function TripOptions({ onSubmit, label }: { onSubmit: (o: Pick<TourInput, "region" | "candidateCities" | "stops" | "capacity" | "startFrom">) => void; label: string }) {
   const [mode, setMode] = useState<"region" | "cities">("region");
   const [region, setRegion] = useState(REGIONS[0]);
   const [cities, setCities] = useState("");
+  const [start, setStart] = useState("");
   const [stops, setStops] = useState(4);
   const [cap, setCap] = useState({ min: "", max: "" });
   const submit = (e: FormEvent) => {
@@ -44,6 +45,7 @@ function TripOptions({ onSubmit, label }: { onSubmit: (o: Pick<TourInput, "regio
     const min = Number(cap.min), max = Number(cap.max);
     onSubmit({
       region: mode === "region" ? region : undefined,
+      startFrom: mode === "region" && start.trim() ? start.trim() : undefined,
       candidateCities: mode === "cities" && list.length ? list : undefined,
       stops,
       capacity: min > 0 && max > 0 ? [Math.min(min, max), Math.max(min, max)] : undefined,
@@ -64,6 +66,11 @@ function TripOptions({ onSubmit, label }: { onSubmit: (o: Pick<TourInput, "regio
         <label className="block text-sm">Country
           <input list="regions" value={region} onChange={(e) => setRegion(e.target.value)} className={`${field} mt-1`} />
           <datalist id="regions">{REGIONS.map((r) => <option key={r} value={r} />)}</datalist>
+        </label>
+      ) : null}
+      {mode === "region" ? (
+        <label className="block text-sm">Starting city <span className="text-muted">(optional: the tour stays within a day&apos;s drive of each stop)</span>
+          <input value={start} onChange={(e) => setStart(e.target.value)} placeholder="e.g. Chicago" className={`${field} mt-1`} />
         </label>
       ) : (
         <label className="block text-sm">Cities you&apos;re considering <span className="text-muted">(comma-separated)</span>
@@ -152,7 +159,11 @@ export function ResolvePanel({ query, onStart, onCancel }: { query: { name: stri
     return () => { live = false; };
   }, [query]);
 
-  const who = query.kind === "person" ? "comedian" : "artist";
+  // Qloo's own description decides comedy mode when the toggle was left on "Musician".
+  const chosen = result && result.status !== "not_found" ? result.candidates[selected] : undefined;
+  const comedyByQloo = query.kind === "artist" && /\b(comedian|stand-?up|comic)\b/i.test(chosen?.description ?? "");
+  const effectiveKind: ArtistKind = comedyByQloo ? "person" : query.kind;
+  const who = effectiveKind === "person" ? "comedian" : "artist";
   return (
     <section className="mx-auto max-w-2xl px-4 py-8 sm:px-6" aria-live="polite">
       <button type="button" onClick={onCancel} className="mb-4 min-h-11 font-mono text-xs uppercase tracking-wider text-muted hover:text-ink">← Back</button>
@@ -161,6 +172,7 @@ export function ResolvePanel({ query, onStart, onCancel }: { query: { name: stri
           <div role="alert">
             <h2 className="font-display text-2xl uppercase">Search didn&apos;t work</h2>
             <p className="mt-2 text-sm text-muted">{error}</p>
+            <button type="button" onClick={onCancel} className="mt-4 min-h-11 rounded-lg bg-accent px-4 font-mono text-xs uppercase text-accent-ink">Open a demo tour</button>
           </div>
         ) : !result ? (
           <div className="space-y-3" aria-label="Searching Qloo">
@@ -180,7 +192,10 @@ export function ResolvePanel({ query, onStart, onCancel }: { query: { name: stri
             <button type="button" onClick={() => setEmerging(true)} className="mt-3 min-h-11 text-sm text-muted underline underline-offset-4 hover:text-ink">
               None of these — plan as an emerging act
             </button>
-            <TripOptions label="Scout the tour" onSubmit={(o) => onStart({ artist: toRef(result.candidates[selected], query.kind), ...o })} />
+            {comedyByQloo && (
+              <p role="note" className="mt-3 rounded-lg border border-accent/60 px-3 py-2 text-sm">Qloo describes {clean(result.candidates[selected].name)} as a comedian, so this plans a comedy-club tour (comedy rooms and feature acts).</p>
+            )}
+            <TripOptions label="Scout the tour" onSubmit={(o) => onStart({ artist: toRef(result.candidates[selected], effectiveKind), ...o })} />
           </>
         ) : (
           <>

@@ -10,7 +10,7 @@
  */
 import { Channel, EvidenceLedger, type Source } from "../evidence.ts";
 import { areaName } from "../geo.ts";
-import { QlooError, audienceDemographics, compareAudiences, entityTags, fanHeatmap, findTags, recommend, type QlooCall } from "../qloo.ts";
+import { QlooError, audienceDemographics, compareAudiences, describeEntity, entityTags, fanHeatmap, findTags, recommend, type QEntity, type QlooCall } from "../qloo.ts";
 import { clean, possessive } from "../text.ts";
 import { discoverCities, rankShortlist, scoreCity } from "./cities.ts";
 import type { ArtistKind, City, Coverage, FanProfile, StopData, TourEvent, TourInput } from "./types.ts";
@@ -38,6 +38,13 @@ export function signalsOf(input: TourInput): string[] {
  * Runs one Qloo step: records its evidence, reports it, and turns non-fatal failures into a failed
  * step with an undefined result. Fatal failures (credential, quota) are rethrown.
  */
+/**
+ * Qloo popularity above which an act is no longer a small-room support-slot target. From the demo data:
+ * acts touring 100-500-capacity rooms sit at about 0.56-0.90 (Joanna Sternberg 0.56, Mikaela Davis 0.77,
+ * Tomberlin 0.90), theatre-level acts at 0.96+ (Better Oblivion Community Center 0.96, Big Thief 0.99).
+ */
+export const SMALL_ROOM_POPULARITY = 0.92;
+
 export function makeStepper(ledger: EvidenceLedger, out: StepSink, signal?: AbortSignal): Stepper {
   return async (label, fn, sourceLabel) => {
     if (signal?.aborted) return undefined;
@@ -67,6 +74,31 @@ export type StopContext = {
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 /** True when Qloo's description of a candidate mentions the act by name ("lead vocalist of Big Thief"). */
+/**
+ * Candidates a booker would not pitch as an opener: a supergroup (a band of established names draws
+ * like a headliner), and, for a comedian, a person Qloo describes first as an actor with no stand-up
+ * ("Canadian actor and comedian"), as opposed to a stand-up who also acts ("American comedian and actor").
+ */
+export const unlikelyOpener = (description: string | undefined, comedian: boolean) => {
+  const d = description ?? "";
+  if (/\bsupergroup\b/i.test(d)) return true;
+  return comedian && /^(?:[A-Z][\w-]*\s+){0,3}(?:actor|actress)\b/.test(d.trim()) && !/stand[- ]?up/i.test(d);
+};
+
+/**
+ * Qloo's recommend results carry no description, so the candidate about to be picked is looked up
+ * (describe, receipted) and skipped if it is an unlikely opener; at most `MAX_VETS` lookups per stop.
+ */
+const MAX_VETS = 3;
+export async function describedAs(e: QEntity, kind: ArtistKind, step: Stepper): Promise<string | undefined> {
+  const r = await step((v) => `${clean(e.name)}: ${v.description ?? "no description"}`, async () => {
+    const d = await describeEntity(e.name, kind === "person" ? "person" : "artist");
+    const m = d.status === "resolved" ? (d.entity.id === e.id ? d.entity : undefined) : d.status === "ambiguous" ? d.candidates.find((c) => c.id === e.id) : undefined;
+    return { description: m?.description, call: d.call };
+  }, `Who ${clean(e.name)} is`);
+  return r?.description;
+}
+
 export const isRelatedAct = (description: string | undefined, names: string[] = []) =>
   Boolean(description) && names.some((n) => clean(n).length > 2 && new RegExp(`\\b${escapeRe(clean(n))}\\b`, "i").test(description!));
 
@@ -98,20 +130,31 @@ export async function scoutStop(city: City, index: number, ctx: StopContext, ste
     () => recommend({ targetType: artistType, signals, signalLocation: where, includeTags: comedian ? COMEDIAN_TAGS : undefined, includeTagsOperator: comedian ? "union" : undefined, limit: 8 }),
     `Similar ${comedian ? "comedians" : "artists"} with affinity in ${cityName}`).then(async (r) => {
     // An opener should not outdraw the act: prefer candidates at or below its popularity, then unused ones.
-    const others = (r?.entities ?? []).filter((e) => !signals.includes(e.id) && !isRelatedAct(e.description, ctx.names));
-    const fits = others.filter((e) => ctx.popularity === undefined || (e.popularity ?? 0) <= ctx.popularity);
-    const pool = fits.length ? fits : others;
-    const pick = pool.find((e) => !ctx.usedOpeners?.has(e.id)) ?? pool[0];
+    const others = (r?.entities ?? []).filter((e) => !signals.includes(e.id) && !isRelatedAct(e.description, ctx.names) && !unlikelyOpener(e.description, comedian));
+    // Order: candidates at or below the act's popularity (Qloo's order), then the rest least popular first,
+    // so a small act is never paired with a far bigger one while a closer fit exists. Unused ones win.
+    const fitsAct = (e: QEntity) => ctx.popularity === undefined || (e.popularity !== undefined && e.popularity <= ctx.popularity);
+    const pool = [...others.filter(fitsAct), ...others.filter((e) => !fitsAct(e)).sort((a, b) => (a.popularity ?? 1) - (b.popularity ?? 1))];
+    // Never the same act at two stops: an unused candidate, else none (a repeat is not a suggestion).
+    // Each candidate is reserved before it is looked up, so parallel stops never pick the same act.
+    let pick: QEntity | undefined;
+    let vets = 0;
+    for (const e of pool) {
+      if (ctx.usedOpeners?.has(e.id)) continue;
+      ctx.usedOpeners?.add(e.id);
+      if (vets++ >= MAX_VETS) { pick = e; break; }
+      if (!unlikelyOpener(e.description ?? await describedAs(e, artistType, step), comedian)) { pick = e; break; }
+    }
     if (!r || !pick) return;
-    ctx.usedOpeners?.add(pick.id);
-    stop.opener = { entityId: pick.id, name: pick.name, affinity: pick.affinity, evidence: r.source.id };
+    stop.opener = { entityId: pick.id, name: pick.name, affinity: pick.affinity, evidence: r.source.id,
+      popularity: pick.popularity, sizeCap: ctx.popularity, oversize: !fitsAct(pick) || undefined };
     const overlap = await step((v) => `${cityName}: ${v.shared.length} shared tastes with ${possessive(pick.name)} audience`,
       () => compareAudiences(signals, [pick.id], 6), `Audience overlap between ${clean(who)} and ${clean(pick.name)}`);
     if (overlap) stop.opener.overlap = { shared: overlap.shared, evidence: overlap.source.id };
   });
 
   // The rooms that gave the city its score; cities added later (scout proposals) are scored here.
-  const scored = city.rooms ? city : await scoreCity({ name: cityName, query: where, lat: city.lat, lng: city.lng }, ctx, step, city.hotspot);
+  const scored = city.rooms ? city : await scoreCity({ name: cityName, query: where, lat: city.lat, lng: city.lng }, { ...ctx, comedy: comedian }, step, city.hotspot);
   stop.venues = scored?.rooms ?? [];
   if (scored && !city.rooms) stop.city = { ...stop.city, affinity: scored.affinity, evidence: scored.evidence };
 
@@ -154,21 +197,25 @@ export async function runPhaseA(input: TourInput, out: Channel<TourEvent>, signa
 
   // Cities are the backbone of the plan: without them there is nothing to schedule.
   const venueTag = await venueTagFor(artistType, step);
-  const cityCtx = { signals, who, venueTag };
+  const cityCtx = { signals, who, venueTag, comedy: artistType === "person" };
   const found = input.candidateCities?.length
     ? await rankShortlist(input.candidateCities, cityCtx, step)
-    : await discoverCities(input.region || "United States", input.stops, cityCtx, step);
+    : await discoverCities(input.region || "United States", input.stops, cityCtx, step, undefined, input.startFrom);
   if (!found.cities.length) throw new QlooError("Qloo found no cities with matching rooms for this act and region", "TOUR_NO_CITIES", true);
   const cities = found.cities;
   out.push({ type: "step", label: `Strongest cities: ${cities.slice(0, 3).map((c) => `${clean(c.name)} (${Math.round(c.affinity * 100)})`).join(", ")}`, evidence: [...new Set(cities.slice(0, 3).map((c) => c.evidence))] });
   out.push({ type: "cities", cities: cities.map((c) => ({ ...c, rooms: undefined })), coverage: found.coverage });
 
-  // In emerging mode the "opener" is a support-slot idea: an established act the new act could open for,
-  // so no popularity cap applies (Qloo's similar acts for well-known proxies are all well known).
-  const popularity = input.artist?.popularity;
+  // In emerging mode the "opener" is a support-slot idea: an act the new act could open for. Capped at
+  // the "sounds like" artists' popularity, so a first-tour act is not pointed at headliners far above it.
+  // A new act pitches for a support slot on another act's show, so that act can be bigger, but not a
+  // headliner far beyond small rooms: capped at SMALL_ROOM_POPULARITY (see the README).
+  const popularity = input.artist?.popularity ?? (input.emerging ? SMALL_ROOM_POPULARITY : undefined);
   const names = input.artist ? [input.artist.name] : (input.emerging?.proxies ?? []).map((p) => p.name);
   const ctx: StopContext = { signals, who, artistType, isArtistMode: Boolean(input.artist), venueTag, popularity, usedOpeners: new Set(), names };
-  const stops = await Promise.all(cities.slice(0, input.stops).map(async (city, i) => {
+  // Discovery may return fewer drivable stops than asked (stated in the coverage note); a shortlist uses all.
+  const stopCount = found.coverage.regional?.stops ?? input.stops;
+  const stops = await Promise.all(cities.slice(0, stopCount).map(async (city, i) => {
     const stop = await scoutStop(city, i, ctx, step);
     out.push({ type: "stop", stop: structuredClone(stop) });
     return stop;

@@ -23,7 +23,8 @@ OUT = pathlib.Path(sys.argv[1])
 BASE = sys.argv[2] if len(sys.argv) > 2 else "http://localhost:4518"
 W, H = 2560, 1320
 SCALE = "1.6667"
-DEMO = f"{BASE}/?demo=us-indie-band&video={SCALE}"
+DEMO = f"{BASE}/?demo=us-emerging&video={SCALE}&check=0"        # the lead demo, no automatic route check
+demo_url = lambda slug, check=False: f"{BASE}/?demo={slug}&video={SCALE}" + ("" if check else "&check=0")
 FPS = 30
 LAYOUT_JS = (ROOT / "scripts/video/layout-qa.js").read_text().split("\n", 2)[2]
 OUT.mkdir(parents=True, exist_ok=True)
@@ -113,7 +114,9 @@ class Take:
         if self.rate != 1.0:
             self.cdp.send("Animation.enable")
             self.cdp.send("Animation.setPlaybackRate", {"playbackRate": self.rate})
-        self.cdp.send("Page.startScreencast", {"format": "jpeg", "quality": 92, "maxWidth": W, "maxHeight": H, "everyNthFrame": 1})
+        vp = self.page.viewport_size or {"width": W, "height": H}
+        self.size = (vp["width"], vp["height"])
+        self.cdp.send("Page.startScreencast", {"format": "jpeg", "quality": 92, "maxWidth": vp["width"], "maxHeight": vp["height"], "everyNthFrame": 1})
         self.t0 = time.time()
 
     def mark(self, key):
@@ -153,7 +156,7 @@ class Take:
                         "-vf", f"fps={FPS},format=yuv420p", "-c:v", "libx264", "-preset", "slow", "-crf", "14", "-movflags", "+faststart", str(mp4)], check=True)
         for jpg in self.dir.glob("*.jpg"):  # encoded: drop the raw frames (they run to hundreds of MB)
             jpg.unlink()
-        META[self.name] = {"file": mp4.name, "seconds": round(n / FPS, 3), "width": W, "height": H, "marks": self.marks, "rects": self.rects,
+        META[self.name] = {"file": mp4.name, "seconds": round(n / FPS, 3), "width": self.size[0], "height": self.size[1], "marks": self.marks, "rects": self.rects,
                            "captured_fps": round(len(ts) / max(1e-6, ts[-1] - ts[0]), 1) if len(ts) > 1 else 0, "max_frame_gap": round(gaps, 3)}
         print(f"take {self.name}: {n / FPS:.1f}s, {META[self.name]['captured_fps']} fps captured, max gap {gaps * 1000:.0f} ms")
         META_PATH.write_text(json.dumps(META, indent=2))
@@ -195,8 +198,8 @@ def context(browser, map_only=False, rate=1.0):
     return ctx, ctx.new_page()
 
 
-def demo_done(page, settle=11000, wait_until="networkidle"):
-    page.goto(DEMO, wait_until=wait_until)
+def demo_done(page, settle=11000, wait_until="networkidle", url=None):
+    page.goto(url or DEMO, wait_until=wait_until)
     page.wait_for_selector("text=Credits", state="attached", timeout=30000)
     page.wait_for_timeout(settle)
 
@@ -208,52 +211,64 @@ def prewarm(page):
 
 # ---------------------------------------------------------------- takes
 def take_type(browser):
+    """Emerging-act mode: "Maya" is not the Maya on Qloo, so plan from the fans of an artist Maya sounds like."""
     ctx, page = context(browser)
-    page.request.post(f"{BASE}/api/tour/resolve", data={"name": "Big Thief", "kind": "artist"})  # cache: no loading frame
+    for n in ("Maya", "Joanna Sternberg"):  # cached lookups: no loading frames on film
+        page.request.post(f"{BASE}/api/tour/resolve", data={"name": n, "kind": "artist"})
     page.goto(f"{BASE}/?video={SCALE}", wait_until="networkidle")
     page.wait_for_timeout(1500)
     page.mouse.move(1900, 1000)
     tk = Take(ctx, page, "type")
     tk.start()
-    page.wait_for_timeout(500)
+    page.wait_for_timeout(400)
     tk.rect("search", page.locator("#artist-search"))
     click(page, page.locator("#artist-search"), 200)
     tk.mark("typing")
-    page.keyboard.type("Big Thief", delay=175)  # >= 1.5 s of typing on screen
+    page.keyboard.type("Maya", delay=220)
     tk.mark("typed")
-    page.wait_for_timeout(450)
-    tk.qa("typed", ["#artist-search"])
+    page.wait_for_timeout(400)
     click(page, page.get_by_role("button", name="Scout", exact=True), 180)
     page.wait_for_selector("text=Did you mean", timeout=30000)
     tk.mark("confirm")
     page.wait_for_timeout(300)
-    card = page.locator("text=Did you mean").first.locator("xpath=ancestor::*[self::section or self::div][2]")
-    tk.rect("confirm", card)
-    tk.rect("confirmText", page.locator("text=Did you mean"))
     tk.rect("candidate", page.locator("button:has-text('popularity')"))
+    tk.rect("none", page.get_by_role("button", name=re.compile("None of these")))
     tk.qa("confirm", ["text:Did you mean"])
+    page.wait_for_timeout(1300)
+    click(page, page.get_by_role("button", name=re.compile("None of these")), 250)
+    page.wait_for_selector("text=Emerging-act mode", timeout=10000)
+    tk.mark("emerging")
     page.wait_for_timeout(700)
-    # Match the captured preset: 5 stops and a 300-900 room target (the pitch quotes "rooms of 300-900").
+    box = page.get_by_label("Artist you sound like")
+    tk.rect("soundsLike", box)
+    click(page, box, 150)
+    page.keyboard.type("Joanna Sternberg", delay=90)
+    click(page, page.get_by_role("button", name="Find"), 150)
+    row = page.locator("button:has-text('popularity')").first
+    row.wait_for(timeout=30000)
+    page.wait_for_timeout(500)
+    click(page, row, 250)
+    tk.mark("proxy")
+    page.wait_for_timeout(600)
     rng = page.locator("input[type=range]").first
+    rng.scroll_into_view_if_needed()
     lo, hi = page.evaluate("(el) => [Number(el.min), Number(el.max)]", rng.element_handle())
     rb = rng.bounding_box()
-    move(page, rb["x"] + rb["width"] * (5 - lo) / (hi - lo), rb["y"] + rb["height"] / 2, 18, 150)
-    page.mouse.down()
-    rng.fill("5")
-    page.mouse.up()
-    tk.mark("stops")
-    page.wait_for_timeout(250)
-    for label, value in (("Minimum capacity", "300"), ("Maximum capacity", "900")):
-        click(page, page.get_by_label(label), 150)
-        page.keyboard.type(value, delay=120)
-        page.wait_for_timeout(150)
-    tk.mark("room")
-    tk.qa("filled", ["text:Did you mean"])
-    page.wait_for_timeout(500)
-    tk.rect("scoutTour", page.get_by_role("button", name="Scout the tour"))
-    b = tk.rects["scoutTour"]
-    move(page, b["x"] + b["width"] / 2, b["y"] + b["height"] / 2, 24, 300)
-    page.mouse.down()  # the press (and its ripple) is filmed; no release, so no live run is started
+    move(page, rb["x"] + rb["width"] * (5 - lo) / (hi - lo), rb["y"] + rb["height"] / 2, 16, 120)
+    page.mouse.down(); rng.fill("5"); page.mouse.up()
+    for label, value in (("Minimum capacity", "100"), ("Maximum capacity", "300")):  # as the captured demo
+        click(page, page.get_by_label(label), 120)
+        page.keyboard.type(value, delay=110)
+    tk.mark("filled")
+    page.wait_for_timeout(400)
+    btn = page.get_by_role("button", name="Scout with these fans")
+    btn.scroll_into_view_if_needed()
+    page.wait_for_timeout(300)
+    tk.rect("scoutFans", btn)
+    tk.qa("filled", ["text:Scout with these fans"])
+    b = btn.bounding_box()
+    move(page, b["x"] + b["width"] / 2, b["y"] + b["height"] / 2, 22, 300)
+    page.mouse.down()  # the press (and its ripple) is filmed; no release, so no live run starts
     tk.mark("scoutClick")
     page.wait_for_timeout(700)
     tk.stop()
@@ -332,7 +347,7 @@ def take_ticket(browser):
     tk.rect("rooms", page.locator("[data-stop] h4 + ul"))
     tk.rect("roomsHead", page.locator("[data-stop] h4"))
     tk.rect("opener", page.locator("[data-stop] p.font-display"))
-    tk.rect("pitchBtn", page.get_by_role("button", name="Pitch email to the booker"))
+    tk.rect("pitchBtn", page.get_by_role("button", name=re.compile("Pitch email to the booker|Support-slot request email")))
     tk.qa("ticket", ["[data-stop]", "[data-stop] p.font-display"])
     r = tk.rects["rooms"]
     move(page, r["x"] + r["width"] * 0.55, r["y"] + r["height"] * 0.35, 30, 200)
@@ -343,10 +358,8 @@ def take_ticket(browser):
     tk.mark("opener")
     page.wait_for_timeout(2400)
     tk.mark("scroll")
-    page.evaluate("""() => { const b = [...document.querySelectorAll('button')].find((x) => x.textContent.includes('Pitch email to the booker'));
-      b.scrollIntoView({ behavior: 'smooth', block: 'center' }); }""")
-    page.wait_for_timeout(900)
-    click(page, page.get_by_role("button", name="Pitch email to the booker"), 300)
+    page.wait_for_timeout(900)  # the pitch button is already in view: no scroll (a scroll would cut the ticket)
+    click(page, page.get_by_role("button", name=re.compile("Pitch email to the booker|Support-slot request email")), 300)
     tk.mark("pitchClick")
     page.wait_for_selector("[role=dialog]", timeout=10000)
     page.wait_for_timeout(700)
@@ -359,44 +372,102 @@ def take_ticket(browser):
     ctx.close()
 
 
-def take_scout(browser):
+def take_check(browser):
+    """The agent route check runs by itself on the Maya demo: numbered trace, verdict, Apply, the ticket updates."""
     ctx, page = context(browser)
-    demo_done(page)
-    page.mouse.move(2400, 900)
-    tk = Take(ctx, page, "scout")
+    prewarm(page)
+    page.goto(f"{BASE}/?video={SCALE}", wait_until="networkidle")
+    page.mouse.move(2500, 1300)
+    tk = Take(ctx, page, "check")
     tk.start()
-    page.wait_for_timeout(400)
-    tk.rect("dock", page.locator("#ask"))
-    tk.rect("suggestion", page.locator("button:has-text('instant')"))
-    click(page, page.locator("button:has-text('instant')"), 220)
-    tk.mark("ask")
-    page.wait_for_selector("text=Apply to my tour", timeout=30000)
+    page.goto(demo_url("us-emerging", check=True), wait_until="domcontentloaded")
+    page.wait_for_selector("text=Credits", state="attached", timeout=30000)
+    tk.mark("planDone")
+    page.wait_for_selector("#ask ol li", timeout=30000)
+    tk.mark("trace")
+    page.wait_for_selector("#ask article[data-latest]", timeout=30000)
     tk.mark("answer")
-    page.wait_for_timeout(600)
-    apply = page.get_by_role("button", name=re.compile("Apply to my tour"))
-    # Bring the whole proposal (with its Apply button) fully into view, smoothly, and let it settle.
-    apply.first.evaluate("(el) => el.scrollIntoView({ behavior: 'smooth', block: 'center' })")
     page.wait_for_timeout(900)
-    tk.mark("applyReady")
-    tk.rect("answer", page.locator("#ask ol").last)
+    tk.rect("dock", page.locator("#ask"))
+    tk.rect("answer", page.locator("#ask article[data-latest]"))
+    apply = page.get_by_role("button", name=re.compile("Apply to my tour"))
     tk.rect("apply", apply)
     tk.qa("answer", ["text:Apply to my tour"])
-    page.wait_for_timeout(300)
+    page.wait_for_timeout(1200)
+    tk.mark("applyReady")
     click(page, apply, 300)
     tk.mark("apply")
     page.wait_for_selector("text=Applied", timeout=20000)
     tk.mark("applied")
-    page.wait_for_timeout(900)
+    page.wait_for_timeout(700)
     page.get_by_role("button", name="Hide answers").click()
-    scroll_pane_to(page, "[data-stop]", 24)
-    page.wait_for_timeout(1200)  # the scroll settles before "swapped": the edit cuts across the scroll
-    tk.mark("swapped")
-    tk.rect("opener", page.locator("[data-stop] p.font-display"))
-    tk.rect("ticket", page.locator("[data-stop]"))
-    o = tk.rects["opener"]
-    move(page, o["x"] + o["width"] - 60, o["y"] + o["height"] * 0.55, 26, 200)
-    tk.qa("swapped", ["[data-stop] p.font-display"])
-    page.wait_for_timeout(2600)
+    page.wait_for_timeout(2600)  # the map redraws the changed route
+    tk.mark("redrawn")
+    tk.qa("redrawn", [".maplibregl-marker.stop.on"])
+    page.wait_for_timeout(2400)
+    tk.stop()
+    ctx.close()
+
+
+def take_phone(browser):
+    """A phone (390 px layout, captured at 2x): the demo replays and the route check opens in the bottom sheet."""
+    ctx = browser.new_context(viewport={"width": 780, "height": 1688}, color_scheme="dark", reduced_motion="no-preference", has_touch=True)
+    ctx.add_init_script(CURSOR_JS)
+    page = ctx.new_page()
+    url = f"{BASE}/?demo=us-emerging&video=2"
+    page.goto(url, wait_until="networkidle"); page.wait_for_timeout(9000)  # pre-warm (unfilmed)
+    page.goto(f"{BASE}/?video=2", wait_until="networkidle")
+    tk = Take(ctx, page, "phone")
+    tk.start()
+    page.goto(url, wait_until="domcontentloaded")
+    page.wait_for_selector("[role=dialog][aria-label='Ask the scout'] article[data-latest]", timeout=60000)
+    tk.mark("sheet")
+    page.wait_for_timeout(3500)
+    tk.qa("sheet", ["[role=dialog]"])
+    tk.stop()
+    ctx.close()
+
+
+def take_holds(browser):
+    """Joe List's route check: the trace, then "the route holds" and why."""
+    ctx, page = context(browser)
+    demo_done(page, 9000, url=demo_url("us-comedian"))
+    page.goto(f"{BASE}/?video={SCALE}", wait_until="networkidle")
+    page.mouse.move(2500, 1300)
+    tk = Take(ctx, page, "holds")
+    tk.start()
+    page.goto(demo_url("us-comedian", check=True), wait_until="domcontentloaded")
+    page.wait_for_selector("text=Credits", state="attached", timeout=30000)
+    tk.mark("planDone")
+    page.wait_for_selector("#ask ol li", timeout=30000)
+    tk.mark("trace")
+    page.wait_for_selector("#ask article[data-latest]", timeout=30000)
+    tk.mark("answer")
+    page.wait_for_timeout(1200)
+    tk.rect("answer", page.locator("#ask article[data-latest]"))
+    tk.qa("answer", ["#ask article[data-latest]"])
+    page.wait_for_timeout(4000)
+    tk.stop()
+    ctx.close()
+
+
+def take_sponsor(browser):
+    """The sponsor match from Qloo's brand graph (why-not-a-streaming-dashboard beat)."""
+    ctx, page = context(browser)
+    demo_done(page)
+    page.mouse.move(2500, 1300)
+    tk = Take(ctx, page, "sponsor")
+    tk.start()
+    page.wait_for_timeout(400)
+    scroll_pane_to(page, "#fans", 24)
+    page.wait_for_timeout(1500)
+    card = page.locator("text=Sponsor match").first.locator("xpath=ancestor::div[1]")
+    card.scroll_into_view_if_needed()
+    page.wait_for_timeout(900)
+    tk.mark("sponsor")
+    tk.rect("sponsor", card)
+    tk.qa("sponsor", ["#fans"])
+    page.wait_for_timeout(5000)
     tk.stop()
     ctx.close()
 
@@ -434,7 +505,7 @@ def take_receipts(browser):
     ctx.close()
 
 
-TAKES = {"type": take_type, "map": take_map, "app": take_app, "ticket": take_ticket, "scout": take_scout, "receipts": take_receipts}
+TAKES = {"type": take_type, "map": take_map, "app": take_app, "ticket": take_ticket, "check": take_check, "holds": take_holds, "phone": take_phone, "sponsor": take_sponsor, "receipts": take_receipts}
 
 if __name__ == "__main__":
     only = [t for t in os.environ.get("TAKES", "").split(",") if t] or list(TAKES)

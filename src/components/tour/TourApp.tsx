@@ -30,7 +30,8 @@ const presetView = (slug?: string): View | undefined => {
 };
 
 /** The whole app: landing → confirm artist → live scouting or a replayed demo. */
-export function TourApp({ initialDemo, sharedPlan, present }: { initialDemo?: string; sharedPlan?: TourPlan; present?: number }) {
+/** `autoCheck`: run the agent route check when a plan finishes (off with ?check=0, for screen recordings). */
+export function TourApp({ initialDemo, sharedPlan, present, autoCheck = true }: { initialDemo?: string; sharedPlan?: TourPlan; present?: number; autoCheck?: boolean }) {
   const { state, start, replay, reset, ask, applyChange } = useTourRun(sharedPlan);
   const router = useRouter();
   const [view, setView] = useState<View>(() =>
@@ -99,6 +100,7 @@ export function TourApp({ initialDemo, sharedPlan, present }: { initialDemo?: st
             state={state}
             heading={heading}
             onAsk={ask}
+            autoCheck={autoCheck}
             onApply={applyChange}
             onHome={home}
             onRetry={() => (view.preset ? replay(view.preset) : view.input && start(view.input))}

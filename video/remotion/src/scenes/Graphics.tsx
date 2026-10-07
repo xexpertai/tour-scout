@@ -123,96 +123,64 @@ const Pin = ({ x, y, p, wobble, children, hot = 0 }: { x: number; y: number; p: 
   </g>
 );
 
-export const PersonaTurn = ({ start }: { start: number }) => {
+/** Persona: Maya (fictional, labelled for the whole section), a first tour, not on Qloo yet; a hit into the product. */
+export const Persona = ({ start }: { start: number }) => {
   const t = useT(start);
-  const m2 = line("maya2").at;
-  const turn = SECTIONS.turn;
-  const logo = HITS.logo;
-  // Maya slides left as the map arrives, and leaves for the turn.
-  const toMap = prog(t, m2 - 0.2, 0.8);
-  const mayaOut = prog(t, turn, 0.6);
-  const mapIn = prog(t, m2, 0.7);
-  const center = prog(t, turn, 0.9);           // the map moves to the centre for the turn
-  const mapX = MAP_X + (460 - MAP_X) * center, mapY = MAP_Y + (300 - MAP_Y) * center, mapS = MAP_S + (1.0 - MAP_S) * center;
-  const logoP = prog(t, logo, 0.5);
-  const flash = interpolate(t, [logo - 0.02, logo + 0.03, logo + 0.35], [0, 0.85, 0], clamp);
-  const seatAt = m2 + 3.0;
+  const m = line("maya").at;
+  const hit = HITS.logo;
+  const flash = interpolate(t, [hit - 0.12, hit - 0.02, hit + 0.25], [0, 0.75, 0], clamp);
+  const word = (w: string) => wordAt("maya", w);
   return (
-    <Backdrop glow={0.5}>
-      {/* persona tag: visible for the whole persona section */}
-      <div style={{ position: "absolute", left: 96, top: 72, opacity: (1 - mayaOut) * prog(t, SECTIONS.persona, 0.3), padding: "10px 22px", borderRadius: 999,
+    <Backdrop glow={0.55}>
+      <div style={{ position: "absolute", left: 96, top: 72, opacity: prog(t, start, 0.3), padding: "10px 22px", borderRadius: 999,
         border: `2px solid ${C.sample}`, color: C.sample, fontFamily: sans, fontWeight: 700, fontSize: 26, letterSpacing: 3 }}>FICTIONAL EXAMPLE</div>
-      <div style={{ position: "absolute", left: 140 - 90 * toMap, top: PIC_H - 700, transform: `scale(${1 - 0.3 * toMap})`, transformOrigin: "left bottom",
-        opacity: prog(t, SECTIONS.persona, 0.5) * (1 - mayaOut) }}>
+      <div style={{ position: "absolute", left: 150, top: PIC_H - 700, opacity: prog(t, start, 0.5), transform: `translateY(${(1 - prog(t, start, 0.6)) * 30 + Math.sin((t - start) * 1.6) * 6}px) scale(${1 + (t - start) * 0.008})` }}>
         <Maya />
       </div>
-      <div style={{ position: "absolute", left: 760, top: 300, opacity: prog(t, line("maya1").at - 0.1, 0.4) * (1 - prog(t, m2 - 0.3, 0.4)) }}>
-        <div style={{ fontFamily: display, fontSize: 180, color: C.ink, lineHeight: 1 }}>MEET MAYA</div>
-        <div style={{ fontFamily: sans, fontSize: 46, color: C.muted, marginTop: 24 }}>Folk singer · planning her first five-city tour</div>
+      <div style={{ position: "absolute", left: 760, top: 210 }}>
+        <div style={{ fontFamily: display, fontSize: 190, color: C.ink, lineHeight: 0.95, opacity: prog(t, m - 0.1, 0.35) }}>MAYA</div>
+        <div style={{ fontFamily: display, fontSize: 84, color: C.accent, marginTop: 10, opacity: prog(t, m + 0.3, 0.3) }}>FIRST TOUR</div>
+        <div style={{ marginTop: 36, display: "inline-block", fontFamily: display, fontSize: 64, color: C.neon, padding: "6px 22px", border: `5px solid ${C.neon}`,
+          transform: `rotate(-3deg) scale(${1.25 - 0.25 * prog(t, word("isn't") - 0.05, 0.22)})`, opacity: prog(t, word("isn't") - 0.05, 0.15) }}>NOT ON QLOO YET</div>
       </div>
-      {/* the map of guesses */}
-      <div style={{ position: "absolute", left: mapX, top: mapY, transform: `scale(${mapS})`, transformOrigin: "left top", opacity: mapIn * (1 - prog(t, logo - 0.05, 0.1) * 0.75) }}>
-        <svg width={US_W} height={US_H} style={{ overflow: "visible" }}>
-          <defs>
-            <radialGradient id="glow"><stop offset="0" stopColor="#ffd2b0" /><stop offset="0.25" stopColor={C.accent} /><stop offset="0.6" stopColor={C.neon} stopOpacity="0.45" /><stop offset="1" stopColor={C.neon} stopOpacity="0" /></radialGradient>
-          </defs>
-          <path d={US_PATH} fill={C.surface} stroke="#3a3a48" strokeWidth={3} />
-          {FANS.map(([lo, la, s], i) => {
-            const [x, y] = project(lo, la);
-            const g = prog(t, turn + 0.5 + i * 0.22, 1.0);
-            return <circle key={i} cx={x} cy={y} r={70 * s * g} fill="url(#glow)" opacity={0.9 * g} />;
-          })}
-          {GUESSES.map(([lo, la], i) => {
-            const [x, y] = project(lo, la);
-            const p = spring({ frame: Math.max(0, (t - (m2 + 0.3 + i * 0.35)) * FPS), fps: FPS, config: { damping: 9, stiffness: 160 } });
-            const gone = prog(t, turn + 0.3 + i * 0.12, 0.5);
-            const wob = Math.sin((t - m2) * 5 + i) * 6 * (1 - gone);
-            const empty = i === 2 ? prog(t, seatAt, 0.35) : 0;
-            return (
-              <g key={i} opacity={1 - gone}>
-                <Pin x={x} y={y} p={p * (1 - 0.4 * gone) * (1 + 0.35 * empty)} wobble={wob} hot={empty}>
-                  {empty > 0 ? (
-                    <g opacity={empty} transform="translate(0 -60) scale(0.62)">
-                      <rect x={-22} y={-6} width={44} height={34} rx={8} fill={C.surface2} stroke={C.neon} strokeWidth={4} />
-                      <rect x={-26} y={22} width={52} height={14} rx={5} fill={C.surface} stroke={C.neon} strokeWidth={4} />
-                    </g>
-                  ) : undefined}
-                </Pin>
-              </g>
-            );
-          })}
-        </svg>
-      </div>
-      <div style={{ position: "absolute", left: 800, top: 120, fontFamily: display, fontSize: 92, color: C.ink, opacity: prog(t, m2 + 0.4, 0.4) * (1 - prog(t, turn - 0.3, 0.3)) }}>
-        GUT FEEL <span style={{ color: C.neon }}>×</span> 5 CITIES
-      </div>
-      {/* the turn: the question, then the logo */}
-      <div style={{ opacity: 1 - prog(t, logo - 0.15, 0.12) }}>
-        <Spoken id="turn1" t={t} breakAfter={4} style={{ position: "absolute", top: 40, left: 80, right: 80, textAlign: "center", fontFamily: display, fontSize: 96, color: C.ink, lineHeight: 1.05 }} accentFrom={7} accent={C.accent} />
-      </div>
-      {t >= logo - 0.05 && (
-        <AbsoluteFill style={{ alignItems: "center", justifyContent: "center", flexDirection: "column" }}>
-          <div style={{ fontFamily: display, fontSize: 250, color: C.ink, letterSpacing: 4, transform: `scale(${1.25 - 0.25 * spring({ frame: Math.max(0, (t - logo) * FPS), fps: FPS, config: { damping: 13, stiffness: 170 } })})`, opacity: logoP }}>
-            TOUR<span style={{ color: C.accent }}>·</span>SCOUT
-          </div>
-          <div style={{ height: 10, width: 980 * prog(t, logo + 0.2, 0.5), background: C.neon, borderRadius: 6, marginTop: -6, boxShadow: "0 0 24px rgba(255,46,136,.6)" }} />
-          <div style={{ marginTop: 44, fontFamily: display, fontSize: 64, color: C.ink, opacity: prog(t, logo + 0.75, 0.4), letterSpacing: 1 }}>
-            FIND YOUR FANS BEFORE YOU <span style={{ color: C.neon }}>BOOK THE ROOM.</span>
-          </div>
-        </AbsoluteFill>
-      )}
       <AbsoluteFill style={{ background: "#fff", opacity: flash }} />
+    </Backdrop>
+  );
+};
+
+/** Why not a streaming dashboard: listeners you have vs. fans you could have, with the sponsor match on screen. */
+export const WhyNot = ({ start, children }: { start: number; children: React.ReactNode }) => {
+  const t = useT(start);
+  const w = (x: string) => wordAt("whynot", x);
+  const chips = [["THE ROOMS", "rooms"], ["THE OPENERS", "openers"], ["THE SPONSORS", "sponsors"]] as const;
+  return (
+    <Backdrop glow={0.4}>
+      <div style={{ position: "absolute", left: 80, top: 70, width: 760 }}>
+        <div style={{ fontFamily: sans, fontWeight: 700, fontSize: 26, letterSpacing: 3, color: C.muted, opacity: prog(t, start, 0.3) }}>STREAMING DASHBOARDS</div>
+        <div style={{ fontFamily: display, fontSize: 76, lineHeight: 1, color: "#8d8995", marginTop: 8, opacity: prog(t, start + 0.15, 0.35) }}>WHERE YOUR LISTENERS ARE</div>
+        <div style={{ height: 3, background: C.line, margin: "46px 0" }} />
+        <div style={{ fontFamily: sans, fontWeight: 700, fontSize: 26, letterSpacing: 3, color: C.qloo, opacity: prog(t, w("Qloo") - 0.1, 0.3) }}>QLOO&apos;S TASTE GRAPH</div>
+        <div style={{ fontFamily: display, fontSize: 76, lineHeight: 1, color: C.ink, marginTop: 8, opacity: prog(t, w("Qloo") + 0.2, 0.35) }}>WHERE YOUR FANS <span style={{ color: C.accent }}>COULD BE</span></div>
+        <div style={{ display: "flex", gap: 14, marginTop: 34, flexWrap: "wrap" }}>
+          {chips.map(([label, k]) => (
+            <span key={k} style={{ fontFamily: display, fontSize: 36, padding: "8px 18px", borderRadius: 12, background: C.surface2, color: C.ink, border: `2px solid ${C.accent}`,
+              opacity: prog(t, w(k) - 0.1, 0.25), transform: `translateY(${(1 - prog(t, w(k) - 0.1, 0.3)) * 16}px)` }}>{label}</span>
+          ))}
+        </div>
+      </div>
+      <div style={{ position: "absolute", left: 900, top: 90, width: 960, height: 780, borderRadius: 18, overflow: "hidden", border: `2px solid ${C.line}`,
+        opacity: prog(t, start + 0.3, 0.5), transform: `translateX(${(1 - prog(t, start + 0.3, 0.6)) * 40}px)` }}>{children}</div>
     </Backdrop>
   );
 };
 
 // ------------------------------------------------------------------ 6. how it works
 const NODES = [
-  { k: "Qloo's", title: "QLOO", sub: "official harness", code: "where_popular · recommend · compare_audiences", color: C.qloo },
-  { k: "finds", title: "THE PLAN", sub: "cities, rooms and openers, built in code", code: "streamed live", color: C.accent },
-  { k: "Claude", title: "CLAUDE HAIKU 4.5", sub: "writes the why and the pitches", code: "cites Qloo evidence", color: C.ai },
-  { k: "server", title: "SERVER CHECKS", sub: "citations · safe-use guard · scout proposals", code: "before anything shows", color: C.neon },
-  { k: "you", title: "YOU", sub: "a tour plan with receipts", code: "", color: C.ink },
+  { k: "plan", title: "THE PLAN", sub: "every Qloo call planned in code: auditable", code: "receipts on every number", color: C.accent },
+  { k: "Qloo's", title: "QLOO", sub: "the official harness", code: "where_popular · recommend · compare_audiences", color: C.qloo },
+  { k: "Claude", title: "CLAUDE HAIKU", sub: "writes the why and the pitches", code: "from a facts-allowed block", color: C.ai },
+  { k: "guards", title: "GUARDS", sub: "citations, safe use, no invented claims", code: "else labelled template", color: C.neon },
+  { k: "agent", title: "AGENT CHECK", sub: "Qloo tools test the route", code: "server checks its numbers", color: C.ink },
 ];
 
 export const How = ({ start }: { start: number }) => {
@@ -222,8 +190,10 @@ export const How = ({ start }: { start: number }) => {
   // The row stays centred as it grows: its width follows how many cards have (partly) arrived.
   const shown = ats.reduce((n, at) => n + prog(t, at - 0.05, 0.5), 0);
   const x0 = (1920 - (Math.max(1, shown) * W + Math.max(0, shown - 1) * G)) / 2;
+  const drift = 1 + Math.max(0, t - start) * 0.004; // a slow push: never a still frame
   return (
     <Backdrop glow={0.4}>
+     <AbsoluteFill style={{ transform: `scale(${drift})` }}>
       <div style={{ position: "absolute", top: 150, width: "100%", textAlign: "center", fontFamily: display, fontSize: 110, color: C.ink, opacity: prog(t, start, 0.4),
         transform: `translateY(${(1 - prog(t, start, 0.5)) * 20}px)` }}>UNDER THE HOOD</div>
       <svg width="1920" height={PIC_H} style={{ position: "absolute", inset: 0 }}>
@@ -252,6 +222,7 @@ export const How = ({ start }: { start: number }) => {
           </div>
         );
       })}
+     </AbsoluteFill>
     </Backdrop>
   );
 };
@@ -266,11 +237,12 @@ export const Close = ({ start }: { start: number }) => {
   const drift = 1 + 0.035 * Math.max(0, t - hit) / 6; // a slow push on the end card: never a static hold
   return (
     <Backdrop glow={1}>
-     <AbsoluteFill style={{ transform: `scale(${drift})` }}>
-      <div style={{ position: "absolute", top: 110, width: "100%", textAlign: "center", fontFamily: display, fontSize: 70, color: C.ink, letterSpacing: 3, opacity: prog(t, start, 0.4) }}>
+     {/* One block, centred vertically; the two link rows always keep their space (draft or final). */}
+     <AbsoluteFill style={{ transform: `scale(${drift})`, height: PIC_H, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center" }}>
+      <div style={{ fontFamily: display, fontSize: 70, color: C.ink, letterSpacing: 3, opacity: prog(t, start, 0.4) }}>
         TOUR<span style={{ color: C.accent }}>·</span>SCOUT
       </div>
-      <div style={{ position: "absolute", top: 260, width: "100%", textAlign: "center", fontFamily: display, fontSize: 150, lineHeight: 1.0, color: C.ink, transform: `scale(${pulse})` }}>
+      <div style={{ marginTop: 40, fontFamily: display, fontSize: 150, lineHeight: 1.0, color: C.ink, transform: `scale(${pulse})` }}>
         {["FIND", "YOUR", "FANS", "BEFORE", "YOU"].map((w, i) => {
           const p = prog(t, wordAt("close", i + 2) - 0.05, 0.2);
           return <span key={w} style={{ display: "inline-block", opacity: p, transform: `translateY(${(1 - p) * 24}px)`, marginRight: "0.22em" }}>{w}</span>;
@@ -281,8 +253,8 @@ export const Close = ({ start }: { start: number }) => {
           return <span key={w} style={{ display: "inline-block", color: C.neon, opacity: p, transform: `translateY(${(1 - p) * 24}px)`, marginRight: "0.22em" }}>{w}</span>;
         })}
       </div>
-      <div style={{ position: "absolute", top: 640, width: "100%", textAlign: "center", fontFamily: sans, fontSize: 40, color: C.ink, lineHeight: 1.6 }}>
-        {rows.map((r, i) => <div key={r} style={{ opacity: prog(t, hit + 0.5 + i * 0.25, 0.4) }}>{r}</div>)}
+      <div style={{ marginTop: 48, fontFamily: sans, fontSize: 40, color: C.ink, lineHeight: 1.6 }}>
+        {[0, 1].map((i) => <div key={i} style={{ minHeight: 64, opacity: rows[i] ? prog(t, hit + 0.5 + i * 0.25, 0.4) : 0 }}>{rows[i] ?? "\u00a0"}</div>)}
         <div style={{ opacity: prog(t, hit + 0.6 + rows.length * 0.25, 0.4), color: C.muted, marginTop: 10 }}>Built by {CONFIG.builtBy}</div>
       </div>
      </AbsoluteFill>

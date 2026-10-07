@@ -1,6 +1,7 @@
 "use client";
 
 import { baseOrigin, sourceLabel } from "@/lib/tour/source-label";
+import { isRouteCheck, routeCheckQuestion } from "@/lib/tour/presets";
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import { InsightText, ProvenanceLegend, ReceiptsContext, ReceiptsToggle, Section, Writing, clean, fitDisplay, shortDate } from "./atoms";
@@ -9,6 +10,7 @@ import { ScoutDock } from "./FollowUps";
 import { Activity, CoverageNote, CreditsRoll, FanLineup, ShowIdeas, WithheldNote } from "./PlanSections";
 import { StopTicket } from "./Ticket";
 import { distanceKm } from "@/lib/markets";
+import { ROAD_FACTOR, driveHours } from "@/lib/tour/region";
 import type { RunState } from "./useTourRun";
 import type { MapCity, MapGhost, MapProposal, MapStop } from "./TourMap";
 
@@ -19,7 +21,8 @@ const ERROR_TITLES: Record<string, string> = {
   QLOO_RATE_LIMIT: "Qloo is rate-limiting us",
   RATE_LIMITED: "Easy, tour manager",
   DAILY_CAP: "Today's live budget is used up",
-  QLOO_AUTH: "Qloo rejected the server's credential",
+  QLOO_AUTH: "Live Qloo data is unavailable",
+  QLOO_UNAVAILABLE: "Live Qloo data is unavailable",
   QLOO_NOT_INSTALLED: "The Qloo connection isn't set up on this server",
   QLOO_TIMEOUT: "Qloo took too long to answer",
   TOUR_NO_CITIES: "Qloo found no cities with matching rooms for this act and region",
@@ -69,9 +72,9 @@ function ExportMenu({ state }: { state: RunState }) {
   );
 }
 
-export function ScoutView({ state, heading, onRetry, onRerunLive, onAsk, onApply, onHome }: {
+export function ScoutView({ state, heading, onRetry, onRerunLive, onAsk, onApply, onHome, autoCheck: autoCheckOn = true }: {
   state: RunState; heading: Heading; onRetry: () => void; onRerunLive?: () => void;
-  onAsk: (q: string) => Promise<string | undefined>; onApply: (i: number) => Promise<string | undefined>; onHome: () => void;
+  onAsk: (q: string) => Promise<string | undefined>; onApply: (i: number) => Promise<string | undefined>; onHome: () => void; autoCheck?: boolean;
 }) {
   const running = state.status === "running" || state.status === "writing";
   const writing = state.status === "writing";
@@ -82,6 +85,9 @@ export function ScoutView({ state, heading, onRetry, onRerunLive, onAsk, onApply
   const [expanded, setExpanded] = useState(false);
   const [receipts, setReceipts] = useState(false);
   const [sheet, setSheet] = useState(false);
+  // Phones: the agent route check's result opens in the bottom sheet by itself, once per plan.
+  const [sheetSeen, setSheetSeen] = useState<string>();
+  const narrow = typeof window !== "undefined" && window.matchMedia("(max-width: 1023px)").matches;
   useEffect(() => {
     const onScroll = () => setCompact(window.scrollY > 160);
     window.addEventListener("scroll", onScroll, { passive: true });
@@ -94,7 +100,14 @@ export function ScoutView({ state, heading, onRetry, onRerunLive, onAsk, onApply
   const mapCities: MapCity[] = useMemo(() => state.cities.filter((c) => c.lat !== undefined && c.lng !== undefined)
     .map((c) => ({ id: c.entityId, name: c.name, lat: c.lat!, lng: c.lng!, affinity: c.affinity })), [state.cities]);
 
-  const ghosts: MapGhost[] = useMemo(() => state.followUps.flatMap((f, i) => f.pins.map((p) => ({ key: `${i}-${p.name}`, name: p.name, lat: p.lat, lng: p.lng, affinity: p.affinity, target: `ask-${i}` }))), [state.followUps]);
+  // Ghost pins only for places not already on the map (a scored city has its own marker and label).
+  const ghosts: MapGhost[] = useMemo(() => {
+    // ...and not for a city an open proposal adds (its "+ city" marker names it).
+    const proposed = state.followUps.filter((f) => f.proposal && !f.appliedAs).flatMap((f) => f.proposal!.add.map((c) => clean(c.name).toLowerCase()));
+    const known = new Set([...state.cities.map((c) => clean(c.name).toLowerCase()), ...proposed]);
+    return state.followUps.flatMap((f, i) => f.pins.filter((p) => !known.has(clean(p.name).toLowerCase()))
+      .map((p) => ({ key: `${i}-${p.name}`, name: p.name, lat: p.lat, lng: p.lng, affinity: p.affinity, target: `ask-${i}` })));
+  }, [state.followUps, state.cities]);
   // The newest unapplied proposal is previewed on the map: removed stops fade, added cities pulse.
   const pending = [...state.followUps].reverse().find((f) => f.proposal && !f.appliedAs)?.proposal;
   const proposal: MapProposal | undefined = useMemo(() => pending && {
@@ -151,8 +164,25 @@ export function ScoutView({ state, heading, onRetry, onRerunLive, onAsk, onApply
   const origin = state.origin;
 
   const located = ordered.filter((s) => s.city.lat !== undefined && s.city.lng !== undefined);
-  const routeKm = located.slice(1).reduce((sum, s, i) => sum + distanceKm({ lat: located[i].city.lat!, lng: located[i].city.lng! }, { lat: s.city.lat!, lng: s.city.lng! }), 0);
+  const legKm = located.slice(1).map((s, i) => distanceKm({ lat: located[i].city.lat!, lng: located[i].city.lng! }, { lat: s.city.lat!, lng: s.city.lng! }));
+  const roadKm = (km: number) => Math.round((km * ROAD_FACTOR) / 10) * 10;
+  const routeRoadKm = roadKm(legKm.reduce((a, b) => a + b, 0));
+  const longestLeg = Math.max(0, ...legKm);
   const dock = { followUps: state.followUps, scout: state.scout, onAsk, onApply, suggestions, placeholder, replayed: state.replayedAnswers ?? [] };
+  const autoSheet = narrow && Boolean(state.plan) && sheetSeen !== state.plan?.id && state.followUps.length > 0 && isRouteCheck(state.followUps[0].question) && !state.followUps[0].appliedAs;
+
+  // The agent route check runs by itself once the plan is finished (live runs and demos; not shared or reused plans).
+  const [checked, setChecked] = useState<string>();
+  const planId = state.plan?.id;
+  const autoCheck = autoCheckOn && state.status === "done" && Boolean(planId) && !state.error && !state.followUps.length && !state.scout.busy
+    // A demo replays its recorded check (no API call); it never triggers a live one.
+    && (state.origin?.kind === "live" || (state.origin?.kind === "preset" && isRouteCheck(state.recordedScout?.question))) && checked !== planId;
+  const checkQuestion = state.plan ? (state.origin?.kind === "preset" ? state.recordedScout?.question : routeCheckQuestion(state.plan)) : undefined;
+  useEffect(() => {
+    if (!autoCheck || !planId || !checkQuestion) return;
+    const t = setTimeout(() => { setChecked(planId); void onAsk(checkQuestion); }, 900);
+    return () => clearTimeout(t);
+  }, [autoCheck, planId, checkQuestion, onAsk]);
   const stopNames = ordered.map((s) => clean(s.city.name));
 
   return (
@@ -172,7 +202,8 @@ export function ScoutView({ state, heading, onRetry, onRerunLive, onAsk, onApply
       <div className="min-w-0 lg:flex lg:h-[calc(var(--app-h,100dvh)-3.5rem)] lg:flex-col print:h-auto">
       <div id="plan-scroll" className="min-w-0 space-y-10 px-4 pt-6 sm:px-6 lg:min-h-0 lg:flex-1 lg:overflow-y-auto print:overflow-visible">
         <header className="space-y-3 [container-type:inline-size]">
-          <p className="text-sm text-muted">{heading.sub}</p>
+          {/* The stop count follows the plan as it is now (an applied change can add or drop stops). */}
+          <p className="text-sm text-muted">{state.plan ? heading.sub.replace(/^\d+ stops/, `${state.plan.stops.length} stops`) : heading.sub}</p>
           <h1 className="font-display uppercase leading-[0.9]" style={fitDisplay(heading.name, "4.5rem")}>{clean(heading.name)}</h1>
           {heading.proxyOf?.length ? <p className="text-sm text-muted">Emerging act, planned from the fans of {heading.proxyOf.map(clean).join(" and ")}.</p> : null}
           {heading.arenaScale && <p className="rounded-lg border border-line bg-surface px-3 py-2 text-sm"><b>Stress test: what if the act is huge?</b> <span className="text-muted">The plan shows where the fans cluster. Qloo&apos;s room data is club and theatre scale, so no rooms or pitches are suggested.</span></p>}
@@ -180,13 +211,19 @@ export function ScoutView({ state, heading, onRetry, onRerunLive, onAsk, onApply
           <div className="flex flex-wrap items-center gap-2">
             <ReceiptsToggle />
             {state.plan && <ExportMenu state={state} />}
-            {origin?.kind === "preset" && onRerunLive && !running && (
+            {baseOrigin(origin)?.kind === "preset" && onRerunLive && !running && (
               <button type="button" onClick={onRerunLive} className="no-print min-h-11 px-2 text-sm text-muted underline underline-offset-4 hover:text-ink">Re-run this live</button>
             )}
           </div>
           <ProvenanceLegend />
+          {receipts && state.sources.length > 0 && (
+            <p role="status" className="slide-in rounded-lg border border-qloo/50 bg-qloo-bg px-3 py-2 text-sm text-ink">
+              <b>{state.sources.length} Qloo requests</b> back this plan. Every <span className="font-mono text-qloo">Q</span>-number opens the exact request and what came back;{" "}
+              <a href="#credits" className="underline underline-offset-4">see them all</a>.
+            </p>
+          )}
           {baseOrigin(origin)?.kind === "preset" && (
-            <p className="text-xs text-muted">Demo using a public {heading.proxyOf?.length ? "artist comparison" : "name"} and aggregate Qloo data. Not affiliated with or endorsed by {heading.proxyOf?.length ? heading.proxyOf.map(clean).join(" or ") : clean(heading.name)}; pitch emails are sample drafts.</p>
+            <p className="text-xs text-muted">{heading.proxyOf?.length ? `${clean(heading.name)} is a fictional demo act. ` : ""}Demo using a public {heading.proxyOf?.length ? "artist comparison" : "name"} and aggregate Qloo data. Not affiliated with or endorsed by {heading.proxyOf?.length ? heading.proxyOf.map(clean).join(" or ") : clean(heading.name)}; pitch emails are sample drafts.</p>
           )}
         </header>
         {state.error && (
@@ -197,24 +234,24 @@ export function ScoutView({ state, heading, onRetry, onRerunLive, onAsk, onApply
               {state.error.retryable !== false && !["RATE_LIMITED", "DAILY_CAP"].includes(state.error.code ?? "") && (
                 <button type="button" onClick={onRetry} className="min-h-11 rounded-lg border border-line px-4 font-mono text-xs uppercase">Try again</button>
               )}
-              {["RATE_LIMITED", "DAILY_CAP", "QLOO_RATE_LIMIT"].includes(state.error.code ?? "") && (
+              {["RATE_LIMITED", "DAILY_CAP", "QLOO_RATE_LIMIT", "QLOO_AUTH", "QLOO_UNAVAILABLE", "QLOO_NOT_INSTALLED"].includes(state.error.code ?? "") && (
                 <button type="button" onClick={onHome} className="min-h-11 rounded-lg bg-accent px-4 font-mono text-xs uppercase text-accent-ink">Open a demo tour</button>
               )}
             </div>
           </div>
         )}
-        {state.fallback && <p className="rounded-xl border border-line bg-surface px-4 py-3 text-sm text-muted">AI writing was unavailable ({state.fallback}). The Qloo data is complete; the text below is templated.</p>}
+        {state.fallback && <p role="status" className="rounded-xl border border-line bg-surface px-4 py-3 text-sm text-muted"><b className="text-ink">AI text paused; showing template.</b> {state.fallback.replace(/^AI text paused: /, "").replace(/^./, (c) => c.toUpperCase())}. The Qloo data is complete.</p>}
 
         {(running || state.steps.length > 0) && state.status !== "done" && <Activity steps={state.steps} running={running} replay={origin?.kind === "preset"} />}
 
         <Section title="The route">
           <div className="mb-5"><CoverageNote coverage={state.coverage} region={state.coverage?.region} cities={state.cities} stopNames={stopNames} /></div>
           {state.plan && located.length > 1 && (
-            <p className="mb-3 text-sm text-muted">{located.length} stops · ≈ {Math.round(routeKm / 10) * 10 >= 1000 ? (Math.round(routeKm / 100) * 100).toLocaleString("en") : Math.round(routeKm / 10) * 10} km between stops in this order (straight line). Fan hotspots drive the cities; check drive times before booking.</p>
+            <p className="mb-3 text-sm text-muted">{located.length} stops · ≈ {routeRoadKm.toLocaleString("en")} km of driving in this order, longest leg ≈ {roadKm(longestLeg)} km (≈ {Math.max(1, Math.round(driveHours(longestLeg)))} h). Estimates from straight-line distance; check real drive times before booking.</p>
           )}
           {state.summary ? <InsightText item={state.summary} className="mb-5" /> : writing ? <div className="mb-5"><Writing label="Writing the summary…" /></div> : null}
           <div className="space-y-4">
-            {ordered.map((s) => <StopTicket key={s.stopId} stop={s} active={s.stopId === activeId} writing={running} emerging={Boolean(heading.proxyOf?.length)}
+            {ordered.map((s) => <StopTicket key={s.stopId} stop={s} active={s.stopId === activeId} writing={running} emerging={Boolean(heading.proxyOf?.length)} comedian={state.plan?.artist.type === "person"}
               arena={Boolean(heading.arenaScale)} rank={rankOf(s.city.name)} of={ranked.length || undefined} />)}
             {running && ordered.length === 0 && <p className="text-sm text-muted">Stops appear here as Qloo scores each city.</p>}
           </div>
@@ -228,7 +265,7 @@ export function ScoutView({ state, heading, onRetry, onRerunLive, onAsk, onApply
       </div>
         {state.plan && <div className="hidden px-6 lg:block lg:shrink-0"><ScoutDock variant="dock" {...dock} /></div>}
       </div>
-      {sheet && state.plan && <ScoutDock variant="sheet" onClose={() => setSheet(false)} {...dock} />}
+      {(sheet || autoSheet) && state.plan && <ScoutDock variant="sheet" onClose={() => { setSheet(false); setSheetSeen(planId); }} {...dock} />}
 
       {ordered.length > 0 && (
         <nav aria-label="Stops" className="no-print fixed inset-x-0 bottom-0 z-[1001] border-t border-line bg-bg/95 px-3 py-2 backdrop-blur lg:hidden">

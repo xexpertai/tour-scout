@@ -103,13 +103,63 @@ export function offRouteCity(text: string, offRoute: string[] = []): string | un
  * `opts.offRoute`: touring cities that are not stops; text naming one is withheld from the summary
  * and stop text (fields starting with "summary", or ending in "why"/"pitch").
  */
-export function insightGuard(validIds: Set<string>, templated = false, opts: { capacity?: [number, number]; offRoute?: string[] } = {}) {
+/** A pitch is sent to a booker: no internal metrics, scores or evidence ids in it. */
+export function pitchJargon(text: string): string | undefined {
+  if (/\broom affinity\b|\baffinity (score|of)\b/i.test(text)) return "pitch quotes the room-affinity metric";
+  if (/\b\d{1,3}\.\d\b/.test(text)) return "pitch quotes a decimal score";
+  if (/\(?\bQ\d{1,3}\b\)?/.test(text)) return "pitch shows an evidence id";
+  return undefined;
+}
+
+export type GuardOpts = {
+  capacity?: [number, number]; offRoute?: string[];
+  /** The act's name; with `emerging`, it has no Qloo data of its own, so text must not describe its music. */
+  actName?: string; emerging?: boolean;
+  /** Cities near a country-wide fan hotspot; text claiming a hotspot elsewhere is withheld. */
+  hotspotCities?: string[];
+  /** Each stop's rank among the scored cities: "among the strongest" only for the top three. */
+  cityRanks?: Record<string, number>;
+};
+
+const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/** Claims the data cannot back for this plan: pronouns for the act, a new act's own music, hotspots that are not there. */
+export function planClaims(field: string, text: string, o: GuardOpts): string | undefined {
+  if (/\b(he|she|him|her|hers|his)\b/i.test(text)) return "used he/she (the act's gender is not in the data)";
+  if (/\b(already booked|is booked|are booked|booked (for|at|in))\b/i.test(text)) return "presented a suggestion as a booking";
+  if (/\b(optimi[sz]ed|optimal|optimum|perfect(ly)? (fit|match))\b/i.test(text)) return "claimed the plan is optimal (the data ranks options; it does not prove a best)";
+  if (/\bmatch(es|ed)?\b[^.]{0,40}\b(well|perfectly|ideally)\b|\b(well|perfectly|ideally)[- ]matched\b|\b(line-?up|openers?|support acts?) (is|are) (strong|great|perfect|ideal)\b/i.test(text)) return "claimed a fit the tool results did not measure";
+  if (o.emerging && /\b(opener|openers|opens)\b/i.test(text) && !/\bopen for\b/i.test(text)) return "called a support-slot act an opener (the new act opens for them)";
+  if (o.emerging && o.actName && new RegExp(`\\b${escape(o.actName)}(?:'s\\s+(?:[\\w-]+,?\\s+){0,4}(?:songwriting|work|music|approach|sound|storytelling|style|songs)|\\s+(?:is(?! a new act)|brings|writes|makes|sings|plays|delivers)\\b)`, "i").test(text)) {
+    return "described the new act, which has no Qloo data of its own";
+  }
+  if (o.cityRanks && /\b(among the (strongest|top|best)|top (market|city|cities)|strongest (market|city|cities))\b/i.test(text)) {
+    const city = field.replace(/\s+(why|pitch)$/, "");
+    const rank = o.cityRanks[city];
+    if (rank !== undefined && rank > 3) return "called a city one of the strongest, but it ranks below the top three";
+    // A sentence that lists cities as "among the strongest" (a summary) may only list top-three cities.
+    for (const sentence of text.split(/(?<=[.!?])\s+/)) {
+      if (!/\b(among the (strongest|top|best)|strongest (markets|cities))\b/i.test(sentence)) continue;
+      const below = Object.entries(o.cityRanks).find(([c, r]) => r > 3 && sentence.toLowerCase().includes(c.toLowerCase()));
+      if (below) return `called ${below[0]} one of the strongest cities, but it ranks #${below[1]}`;
+    }
+  }
+  if (o.hotspotCities && /hotspot/i.test(text)) {
+    const city = field.replace(/\s+(why|pitch)$/, "");
+    const stopField = city !== field;
+    if (stopField ? !o.hotspotCities.some((c) => c.toLowerCase() === city.toLowerCase()) : !o.hotspotCities.length) return "claimed a fan hotspot the data does not show";
+  }
+  return undefined;
+}
+
+export function insightGuard(validIds: Set<string>, templated = false, opts: GuardOpts = {}) {
   const withheld: Withheld[] = [];
   const guard = (field: string, value: unknown): Insight | undefined => {
     const item = toInsight(value, validIds, templated);
     if (!item) return undefined;
     const routeText = /^summary|(why|pitch)$/.test(field);
-    const reason = unsupportedClaim(item.text) ?? inventedCapacity(item.text, opts.capacity) ?? (routeText ? offRouteCity(item.text, opts.offRoute) : undefined);
+    const reason = unsupportedClaim(item.text) ?? inventedCapacity(item.text, opts.capacity) ?? (routeText ? offRouteCity(item.text, opts.offRoute) : undefined)
+      ?? (/pitch$/.test(field) ? pitchJargon(item.text) : undefined)
+      ?? (templated ? undefined : planClaims(field, item.text, opts));
     if (reason) {
       withheld.push({ field, reason });
       return undefined;

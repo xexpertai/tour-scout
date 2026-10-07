@@ -85,6 +85,14 @@ export default function TourMap({ cities, stops, cells = [], ghosts = [], propos
   const markers = useRef(new Map<string, { marker: maplibregl.Marker; node: HTMLDivElement }>());
   const declutterRef = useRef<() => void>(() => {});
   const fitRef = useRef<{ bounds: maplibregl.LngLatBounds; padding: () => maplibregl.PaddingOptions } | null>(null);
+  // Cities a proposal adds: every refit (including on a pane resize) keeps them in view.
+  const extraRef = useRef<[number, number][]>([]);
+  const withExtra = (b: maplibregl.LngLatBounds) => {
+    if (!extraRef.current.length) return b;
+    const out = new maplibregl.LngLatBounds(b.getSouthWest(), b.getNorthEast());
+    extraRef.current.forEach((p) => out.extend(p));
+    return out;
+  };
 
   // ---- create the map once
   useEffect(() => {
@@ -154,7 +162,7 @@ export default function TourMap({ cities, stops, cells = [], ghosts = [], propos
     const ro = new ResizeObserver(() => {
       map.resize();
       const f = fitRef.current;
-      if (f) map.fitBounds(f.bounds, { padding: f.padding(), maxZoom: 8.5, duration: 0 });
+      if (f) map.fitBounds(withExtra(f.bounds), { padding: f.padding(), maxZoom: 8.5, duration: 0 });
       requestAnimationFrame(() => declutterRef.current());
     });
     ro.observe(box.current);
@@ -264,7 +272,7 @@ export default function TourMap({ cities, stops, cells = [], ghosts = [], propos
       m.marker.setLngLat([s.lng, s.lat]);
       (m.node.querySelector(".stop-pin") as HTMLElement).textContent = String(s.order);
       m.node.classList.toggle("on", show);
-      m.node.style.setProperty("--delay", `${i * 120}ms`);
+      m.node.style.setProperty("--delay", `${150 + i * 120}ms`);
     });
     for (const [key, m] of markers.current) if (key.startsWith("stop:") && !live.has(key)) { m.marker.remove(); markers.current.delete(key); }
     if (!show || !map.getSource("route")) { fitRef.current = null; (map.getSource("route") as GeoJSONSource | undefined)?.setData(fc([])); return; }
@@ -336,17 +344,21 @@ export default function TourMap({ cities, stops, cells = [], ghosts = [], propos
     // Dashed preview of the changed route: removed stops dropped, added cities joined to the nearest remaining stop.
     const src = map.getSource("preview") as GeoJSONSource | undefined;
     if (!src) return;
-    if (!proposal || (!proposal.add.length && !proposal.remove.length)) { src.setData(fc([])); return; }
+    if (!proposal || (!proposal.add.length && !proposal.remove.length)) { extraRef.current = []; src.setData(fc([])); return; }
     const kept = stops.filter((s) => !proposal.remove.includes(s.id));
     const legs = proposal.add.map((c) => {
       const near = kept.slice().sort((a, b) => Math.hypot(a.lat - c.lat, a.lng - c.lng) - Math.hypot(b.lat - c.lat, b.lng - c.lng))[0];
       return near ? line([[near.lng, near.lat], [c.lng, c.lat]]) : undefined;
     }).filter(Boolean) as GeoJSON.Feature[];
     src.setData(fc(legs));
+    // Bring a proposed city into view (it may lie outside the route's frame).
+    const fit = fitRef.current;
+    extraRef.current = proposal.add.map((c) => [c.lng, c.lat]);
+    if (proposal.add.length && fit) map.fitBounds(withExtra(fit.bounds), { padding: fit.padding(), maxZoom: 8.5, duration: reducedMotion() ? 0 : 900 });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on ghosts and proposal
   }, [ghostKey, ready, stopKey]);
 
-  const caption = phase === "hotspots" ? `${cells.length} fan hotspots found` : phase === "scoring" ? `Scoring ${cities.length} cities` : phase === "route" && stops.length ? `Your ${stops.length}-stop run` : "";
+  const caption = phase === "hotspots" ? `${cells.length} fan hotspots found` : phase === "scoring" && cities.length ? `Scoring ${cities.length} cities` : phase === "route" && stops.length ? `Your ${stops.length}-stop run` : "";
   return (
     <div className="relative h-full w-full">
       <div ref={box} className="map-box h-full w-full" />

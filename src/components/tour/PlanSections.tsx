@@ -3,6 +3,7 @@
 import type { Insight, Withheld } from "@/lib/guard";
 import type { Source } from "@/lib/evidence";
 import { coverageText } from "@/lib/tour/coverage-text";
+import { tidyTag } from "@/lib/text";
 import type { City, Coverage, FanProfile } from "@/lib/tour/types";
 import { Chip, Cites, InsightText, Section, Writing, clean, isSample, score1 } from "./atoms";
 
@@ -42,16 +43,24 @@ export function FanLineup({ fan, proxyOf }: { fan?: FanProfile; proxyOf?: string
         <div className="mt-3 flex flex-wrap items-baseline justify-center gap-x-3 gap-y-1">
           {fan.tags.map((t, i) => (
             <span key={t.id} className="font-display uppercase leading-none" style={{ fontSize: `${1.1 + 1.6 * ((t.affinity ?? 0.5) / max)}rem`, opacity: 0.55 + 0.45 * ((t.affinity ?? 0.5) / max) }}>
-              {clean(t.name)}{i < fan.tags.length - 1 && <span className="ml-3 text-accent">·</span>}
+              {tidyTag(clean(t.name))}{i < fan.tags.length - 1 && <span className="ml-3 text-accent">·</span>}
             </span>
           ))}
         </div>
-        {fan.alsoLikes.map((group) => (
+        {fan.alsoLikes.filter((g) => g.domain !== "brand").map((group) => (
           <div key={group.domain} className="mt-5">
             <p className="flex items-center justify-center gap-1.5 text-sm text-muted">
-              Also into {group.domain === "movie" ? "these films" : group.domain === "brand" ? "these brands" : "these shows"} <Cites ids={[group.evidence]} />
+              Also into {group.domain === "movie" ? "these films" : "these shows"} <Cites ids={[group.evidence]} />
             </p>
             <p className="mt-1 text-sm sm:text-base">{group.items.map((x) => clean(x.name)).join("  ·  ")}</p>
+          </div>
+        ))}
+        {fan.alsoLikes.filter((g) => g.domain === "brand" && g.items.length).map((group) => (
+          // Qloo's brand graph as a sponsorship lead: brands these fans favour, in aggregate.
+          <div key="brand" className="mx-auto mt-6 max-w-xl rounded-xl border border-accent/50 bg-bg p-4 text-left">
+            <p className="flex items-center gap-1.5 font-display text-lg uppercase text-accent">Sponsor match <Chip kind="qloo" /> <Cites ids={[group.evidence]} /></p>
+            <p className="mt-1 text-base">{group.items.slice(0, 5).map((x) => clean(x.name)).join("  ·  ")}</p>
+            <p className="mt-2 text-xs text-muted">Brands this audience favours in Qloo&apos;s taste graph: leads for a tour sponsor or a merch collaboration. Affinity, not an endorsement or a deal.</p>
           </div>
         ))}
         {fan.demographics && Object.keys(fan.demographics.age).length > 0 && (
@@ -164,7 +173,11 @@ export function CoverageNote({ coverage, region, cities = [], stopNames = [] }: 
   const limited = coverage.limited || coverage.roomFallback;
   const ranked = [...cities].sort((a, b) => b.affinity - a.affinity);
   const onRoute = (c: City) => stopNames.includes(clean(c.name));
-  const cut = ranked.filter(onRoute).length;
+  // The cut line is drawn only when the route is exactly the top of the ranking (a regional route may skip a stronger, farther city).
+  const k = ranked.filter(onRoute).length;
+  const cut = ranked.slice(0, k).every(onRoute) ? k : 0;
+  const top = ranked.filter(onRoute).map((c) => c.affinity * 100);
+  const spread = top.length > 1 ? Math.max(...top) - Math.min(...top) : undefined;
   return (
     <div className={`rounded-xl border px-4 py-3 text-sm ${limited ? "border-sample/60" : "border-line"} bg-surface`}>
       {limited && <p className="mb-1 font-semibold text-sample">Limited data</p>}
@@ -175,11 +188,14 @@ export function CoverageNote({ coverage, region, cities = [], stopNames = [] }: 
             <li key={c.entityId} className="flex items-center">
               {i === cut && cut > 0 && cut < ranked.length && <span aria-label="cut line" className="mx-2 h-6 w-px bg-neon" />}
               <span className={`rounded-md px-2 py-1 ${onRoute(c) ? "bg-surface-2 text-ink" : "text-muted"}`}>
-                {clean(c.name)} <b className="font-display text-base tabular-nums">{score1(c.affinity)}</b>
+                {clean(c.name)} <b className="font-display text-base tabular-nums">{score1(c.affinity)}</b> <Cites ids={[c.evidence]} />
               </span>
             </li>
           ))}
         </ol>
+      )}
+      {spread !== undefined && spread < 2 && (
+        <p className="mt-2 text-xs text-muted">The stops are within {spread < 0.1 ? "0.1" : spread.toFixed(1)} points of each other: Qloo rates them about equally, so the route and the rooms decide.</p>
       )}
     </div>
   );

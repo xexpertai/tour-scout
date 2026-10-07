@@ -1,106 +1,96 @@
 {
   "_meta": {
     "voice": "af_heart",
-    "note": "Story video (docs/VIDEO_STORYBOARD.md). 'at' = voice start in seconds. Section starts and musical hits sit on the 100 BPM bar grid (2.4 s), so the score and the cuts land together.",
+    "note": "Story video v4 (docs/VIDEO_STORYBOARD.md). 'at' = voice start in seconds.",
     "say": "'say' is what the voice reads when it differs from the caption: Qloo is pronounced \"clue\"."
   },
   "lines": [
     {
       "id": "hook1",
       "text": "You booked the room.",
-      "at": 0.6
+      "at": 0.5
     },
     {
       "id": "hook2",
       "text": "Nobody came.",
-      "at": 2.7
+      "at": 2.4
     },
     {
-      "id": "maya1",
-      "text": "Meet Maya, a folk singer planning her first five-city tour.",
-      "at": 6.5
-    },
-    {
-      "id": "maya2",
-      "text": "She's picking cities on gut feel, and every empty seat comes out of her pocket.",
-      "at": 10.6
-    },
-    {
-      "id": "turn1",
-      "text": "What if you could see where your fans already are?",
-      "at": 17.6
-    },
-    {
-      "id": "turn2",
-      "text": "This is Tour Scout.",
-      "at": 21.75
+      "id": "maya",
+      "text": "Maya isn't on Qloo yet. But Qloo knows the fans of the artists Maya sounds like.",
+      "say": "Maya isn't on Clue yet. But Clue knows the fans of the artists Maya sounds like.",
+      "at": 4.9
     },
     {
       "id": "type",
-      "text": "Type an act and confirm it on Qloo. Here, with a real artist's Qloo data: Big Thief.",
-      "at": 24.4,
-      "say": "Type an act and confirm it on Clue. Here, with a real artist's Clue data: Big Thief."
+      "text": "So tell Tour Scout who Maya sounds like.",
+      "at": 9.7
     },
     {
       "id": "hero",
-      "text": "Qloo's taste graph lights up where this audience actually concentrates, across the whole country.",
-      "at": 31.5,
-      "say": "Clue's taste graph lights up where this audience actually concentrates, across the whole country."
-    },
-    {
-      "id": "strip",
-      "text": "Each hotspot becomes a city, scored by the live rooms these fans favour. The top five make the cut.",
-      "at": 41.1
+      "text": "Here, real Qloo data for the fans of Joanna Sternberg lights up where they actually are.",
+      "say": "Here, real Clue data for the fans of Joanna Sternberg lights up where they actually are.",
+      "at": 12.3
     },
     {
       "id": "route",
-      "text": "Then the route draws itself.",
-      "at": 48.4
+      "text": "Tour Scout keeps it drivable: the strongest cities within a day's drive of each other.",
+      "at": 19.4
     },
     {
       "id": "ticket",
-      "text": "Each stop: where fans cluster, real rooms they favour, and an opener whose fans share their taste.",
-      "at": 53.1
+      "text": "Each stop gets real rooms these fans favour, and a support slot with an act their size whose fans share their taste.",
+      "at": 25.0
     },
     {
       "id": "pitch",
-      "text": "Claude drafts the pitch to each booker, citing Qloo evidence.",
-      "at": 60.4,
-      "say": "Claude drafts the pitch to each booker, citing Clue evidence."
+      "text": "Plus the request, addressed to that act's team, ready to fill in.",
+      "at": 32.6
     },
     {
-      "id": "scout",
-      "text": "Ask the scout. An agent runs Qloo tools and proposes a change. Apply it, and the opener swaps.",
-      "at": 65.2,
-      "say": "Ask the scout. An agent runs Clue tools and proposes a change. Apply it, and the opener swaps."
+      "id": "agent",
+      "text": "Then an agent checks the plan with Qloo tools. It finds a stronger city that still drives: Washington, D.C. over Albany. Apply, and the route redraws.",
+      "say": "Then an agent checks the plan with Clue tools. It finds a stronger city that still drives: Washington, D.C. over Albany. Apply, and the route redraws.",
+      "at": 37.0
     },
     {
-      "id": "split1",
-      "text": "No more guesswork. A live plan takes under a minute,",
-      "at": 74.8
+      "id": "holds",
+      "text": "On a comedy club run, it says the route holds, and shows why.",
+      "at": 47.8
     },
     {
-      "id": "split2",
-      "text": "and every claim links to the exact Qloo request behind it.",
-      "at": 78.1,
-      "say": "and every claim links to the exact Clue request behind it."
+      "id": "phone",
+      "text": "On a phone, the check opens by itself.",
+      "at": 51.8
+    },
+    {
+      "id": "whynot",
+      "text": "Streaming dashboards show where your listeners are. Qloo shows where your fans could be: the rooms, the openers, even the sponsors.",
+      "say": "Streaming dashboards show where your listeners are. Clue shows where your fans could be: the rooms, the openers, even the sponsors.",
+      "at": 54.8
+    },
+    {
+      "id": "receipts",
+      "text": "And every claim links to the exact Qloo request behind it.",
+      "say": "And every claim links to the exact Clue request behind it.",
+      "at": 63.2
     },
     {
       "id": "how",
-      "text": "Under the hood: Qloo's official harness finds and scores the cities, Claude Haiku writes, and the server checks every claim before you see it.",
-      "at": 86.8,
-      "say": "Under the hood: Clue's official harness finds and scores the cities, Claude Haiku writes, and the server checks every claim before you see it."
+      "text": "Under the hood: a plan you can audit, built on Qloo's official harness, Claude Haiku for the words, guards on every claim, and an agent whose answers the server checks against its own numbers.",
+      "say": "Under the hood: a plan you can audit, built on Clue's official harness, Claude Haiku for the words, guards on every claim, and an agent whose answers the server checks against its own numbers.",
+      "at": 67.0
     },
     {
       "id": "close",
       "text": "Tour Scout. Find your fans before you book the room.",
-      "at": 96.08
+      "at": 79.0
     }
   ],
   "timeline": {
     "bpm": 100,
     "fps": 30,
-    "end": 104.4,
+    "end": 87.0,
     "sections": [
       [
         "hook",
@@ -108,58 +98,62 @@
       ],
       [
         "persona",
-        6.0
-      ],
-      [
-        "turn",
-        17.2
+        4.8
       ],
       [
         "type",
-        24.0
+        9.6
       ],
       [
         "hero",
-        31.2
-      ],
-      [
-        "strip",
-        40.8
+        12.0
       ],
       [
         "route",
-        48.0
+        19.2
       ],
       [
         "ticket",
-        52.8
+        24.8
       ],
       [
         "pitch",
-        60.0
+        32.4
       ],
       [
-        "scout",
-        64.8
+        "agent",
+        36.8
       ],
       [
-        "split",
-        74.4
+        "holds",
+        47.6
+      ],
+      [
+        "phone",
+        51.6
+      ],
+      [
+        "whynot",
+        54.6
+      ],
+      [
+        "receipts",
+        63.0
       ],
       [
         "how",
-        86.4
+        66.8
       ],
       [
         "close",
-        95.6
+        78.6
       ]
     ],
     "hits": {
-      "logo": 21.6,
-      "heroLand": 31.2,
-      "howLand": 86.4,
-      "final": 98.4
+      "logo": 9.6,
+      "heroLand": 12.0,
+      "howLand": 66.8,
+      "final": 81.6
     }
   }
 }

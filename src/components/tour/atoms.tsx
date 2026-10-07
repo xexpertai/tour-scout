@@ -62,20 +62,23 @@ export function AffinityScore({ value, sample, evidence, rank, of }: { value: nu
   return (
     <div className="relative shrink-0 text-right">
       <div className="flex items-start justify-end gap-1">
-        <span className="font-display text-5xl leading-none tabular-nums">{score}</span>
+        {/* The rank leads: Qloo's room affinities for one audience sit close together, so the order says more than the number. */}
+        {rank && of && <span className="mt-1 font-mono text-[10px] uppercase leading-tight tracking-wider text-muted">fit<br />rank</span>}
+        <span className="font-display text-5xl leading-none tabular-nums">{rank && of ? `#${rank}` : score}</span>
         <button type="button" aria-expanded={open} aria-label="What is room affinity?" onClick={() => setOpen(!open)}
           className="no-print -mr-2 -mt-2 grid h-11 w-11 place-items-center rounded-full text-muted hover:text-ink">
           <span aria-hidden className="grid h-6 w-6 place-items-center rounded-full border border-line text-xs">?</span>
         </button>
       </div>
       <div className="mt-1 flex items-center justify-end gap-1.5 text-xs text-muted">
-        {rank && of ? <span>#{rank} of {of} cities</span> : <span>room affinity</span>}
+        {rank && of ? <span>of {of} cities · room affinity {score}</span> : <span>room affinity</span>}
         <Chip kind={sample ? "sample" : "qloo"} /> <Cites ids={[evidence]} />
       </div>
       {open && (
         <p role="note" className="absolute right-0 top-full z-20 mt-2 w-72 rounded-lg border border-line bg-surface-2 p-3 text-left text-xs leading-relaxed text-ink shadow-xl">
           Room affinity: Qloo&apos;s affinity (0–100) between the act&apos;s audience, in aggregate, and the best-matching live room in this city.
           Every city is scored the same way, so it ranks cities against each other{rank && of ? ` (this one is #${rank} of ${of})` : ""}.
+          For one audience these values sit close together, so read the rank, not the decimals: a gap under a point is effectively a tie.
           It is not a ticket, attendance or sales forecast.
         </p>
       )}

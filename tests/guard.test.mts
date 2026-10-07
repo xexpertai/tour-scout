@@ -84,3 +84,58 @@ test("keeps only real evidence ids and labels the item by provenance", () => {
   assert.equal(toInsight({ text: "y", evidence: ["Q9"] }, valid)?.kind, "general");
   assert.equal(toInsight({ text: "   ", evidence: ["Q1"] }, valid), undefined);
 });
+
+test("a pitch is sendable: addressed to the room and its town, plain words, a clear ask, placeholders; jargon is withheld", async () => {
+  const { templatePitch } = await import("../src/lib/llm.ts");
+  const { pitchJargon, insightGuard } = await import("../src/lib/guard.ts");
+  const { venueTown } = await import("../src/lib/text.ts");
+  assert.equal(venueTown({ address: "30 Main St Winooski, VT 05404", town: "Burlington" }), "Winooski");
+  assert.equal(venueTown({ address: "1 Broadway New York, NY 10004" }), undefined, "no guess without a street word");
+  const input = { artist: { name: "Act", arenaScale: false }, capacity: [200, 400] as [number, number], fan: { tags: [], alsoLikes: [] }, stops: [] } as never;
+  const stop = { stop_id: "s1", city: "Burlington", affinity: 88.4, evidence: "Q7", cluster: "Old North End", venues: ["Monkey House"], pitchTo: { venue: "Monkey House", town: "Winooski" }, opener: "Julia Jacklin", shared: ["Melodic"] };
+  const text = templatePitch(input, stop, "Act");
+  assert.match(text, /^Subject: Act at Monkey House, \[dates\]/);
+  assert.match(text, /Hi Monkey House team,/);
+  assert.match(text, /a date at Monkey House in Winooski/);
+  assert.match(text, /fans concentrated around Old North End/);
+  for (const p of ["[dates]", "[draw / last play in the area]", "[ticket price]", "[links]"]) assert.ok(text.includes(p), p);
+  assert.match(text, /Do you have a hold around \[dates\]\?/);
+  assert.equal(pitchJargon(text), undefined);
+  assert.ok(pitchJargon("Room affinity 88.4 in Old North End venues."));
+  assert.ok(pitchJargon("Strong numbers (Q7)."));
+  const { guard } = insightGuard(new Set(["Q7"]));
+  assert.equal(guard("Burlington pitch", { text: "Room affinity 88.4 here.", evidence: ["Q7"] }), undefined, "withheld");
+  assert.ok(guard("Burlington why", { text: "Room affinity 88.4 here.", evidence: ["Q7"] }), "the why may quote the score");
+});
+
+test("plan claims the data cannot back are withheld: he/she for the act, a new act's own music, hotspots that aren't there", async () => {
+  const { planClaims, insightGuard } = await import("../src/lib/guard.ts");
+  const o = { actName: "Maya", emerging: true, hotspotCities: ["Burlington"] };
+  assert.ok(planClaims("risks", "Her own audience may differ.", o));
+  assert.ok(planClaims("Boston pitch", "Maya's honest, introspective songwriting connects here.", o));
+  assert.ok(planClaims("Boston pitch", "Maya brings confessional songs to Boston.", o));
+  assert.equal(planClaims("Boston pitch", "Subject: Maya at O'Briens Pub", o), undefined);
+  assert.equal(planClaims("Boston pitch", "Maya is a new act whose audience lines up with yours.", o), undefined, "the skeleton's own line passes");
+  assert.ok(planClaims("answer", "Tomberlin, already booked for New York, fits.", o));
+  assert.ok(planClaims("Providence why", "Darlington is near a Qloo fan hotspot.", o), "no hotspot near Providence");
+  assert.equal(planClaims("Burlington why", "Burlington sits near a Qloo fan hotspot.", o), undefined);
+  assert.ok(planClaims("summary", "Five fan hotspots.", { hotspotCities: [] }));
+  // Templated text is the fallback and is never withheld by these checks.
+  const { guard } = insightGuard(new Set(["Q1"]), false, o);
+  assert.equal(guard("risks", { text: "Her own audience may differ once touring.", evidence: [] }), undefined);
+});
+
+test("the guard withholds 'optimized' and unmeasured 'match well' claims", async () => {
+  const { planClaims } = await import("../src/lib/guard.ts");
+  assert.ok(planClaims("answer", "Route is optimized.", {}));
+  assert.ok(planClaims("answer", "Current openers match fan tastes well.", {}));
+  assert.ok(planClaims("answer", "Current openers are well-matched. No change needed—the lineup is strong.", {}));
+  assert.equal(planClaims("answer", "Route holds: Providence is the weakest stop.", {}), undefined);
+});
+
+test("a summary may call only top-three cities 'among the strongest'", async () => {
+  const { planClaims } = await import("../src/lib/guard.ts");
+  const o = { cityRanks: { "New York": 1, "Washington DC": 3, Providence: 7 } };
+  assert.ok(planClaims("summary", "Qloo's data ranks New York, Washington DC and Providence among the strongest cities.", o));
+  assert.equal(planClaims("summary", "Qloo's data ranks New York and Washington DC among the strongest cities.", o), undefined);
+});

@@ -36,7 +36,7 @@ export async function askCity(plan: TourPlan, question: string): Promise<FollowU
   const step = makeStepper(ledger, { push() {} });
   const place = await placeFor(city);
   const venueTag = await venueTagFor(plan.artist.type, step);
-  const mine = await scoreCity(place, { signals: plan.signals, who, venueTag }, step);
+  const mine = await scoreCity(place, { signals: plan.signals, who, venueTag, comedy: plan.artist.type === "person" }, step);
 
   const heat = await step(() => "", () => fanHeatmap(plan.signals, place.query, 10), `Where ${who} concentrate in ${place.name}`);
   let cluster: FollowUp["cluster"];

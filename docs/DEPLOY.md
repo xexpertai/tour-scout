@@ -26,10 +26,10 @@ Nothing here has been run yet. **Deploying makes the demo public and can cost mo
 | Action | Qloo requests | Claude Haiku calls | Notes |
 | --- | --- | --- | --- |
 | Tap a demo poster (3 presets), or its "instant" scout suggestion | 0 | 0 | Replays a captured live run from `public/presets/` |
-| Live tour | 21–29 | 1 (≈ $0.01) | 3 per visitor per hour, 40 per day for the whole service |
+| Live tour | 21–38 | 1 (≈ $0.01) | 3 per visitor per hour, 40 per day for the whole service |
 | Same tour again within 24 h | 0 | 0 | Reuses the stored plan |
 | Ask the scout | 2–10 | 2–4 | 10 per visitor per hour |
-| All model calls | | at most 60 per day | Worst case ≈ $0.60/day; after that, text is templated and labelled |
+| All model calls | | at most 30 per day (hosted), 45 in the judging window | Bounded by the persisted spend ceiling too ($4 for judging); after either cap, text is templated and labelled |
 
 **Cloud costs.**
 - Request-based Cloud Run with min instances 0 bills only while requests run. A live tour is about a minute of one vCPU, so demo traffic should stay inside Cloud Run's monthly free tier.
@@ -100,13 +100,41 @@ After the deploy:
    - reopening a share link after the service has scaled to zero (checks the bucket mount).
 3. **Links.** Put the service URL into the README, `docs/SUBMISSION.md` and `scripts/video/config.json`. Once the repo is public, render the final video with `FINAL=1 scripts/video/make-story.sh`.
 
+## Before submitting (eligibility is pass/fail)
+
+1. **Hosted app** answers on its public URL: the health check, a demo poster, and one live tour.
+2. **Public repo:** `gh repo edit xexpertai/tour-scout --visibility public --accept-visibility-change-consequences`. Then check that GitHub shows the MIT license in the repo's About sidebar (`gh repo view xexpertai/tour-scout --json licenseInfo` should return `MIT`); it is detected from `LICENSE`.
+3. **Links** in the README, `docs/SUBMISSION.md` and `scripts/video/config.json`; then the `FINAL=1` video render.
+4. **Judging window:** run `judging-on` before 2 Nov (it also starts the separate $4 Claude budget). After the 31 Oct deadline, confirm the event's Qloo key still answers (`/api/health`, then one live tour). If it was rotated, `ROTATE=1 scripts/deploy-cloudrun.sh setup` with the new key, then redeploy.
+
+## If the Qloo key stops working (after 31 Oct)
+
+The judges may test in November, after the event key could be rotated or switched off. Nothing breaks:
+- The three demo tours, their recorded scout answers, Apply and share links make no Qloo calls and keep working.
+- A live search or tour is refused at once (HTTP 503, under a second) with "Live Qloo data isn't available on this server right now. The demo tours still work.", plus an "Open a demo tour" button.
+- A rejected key (`QLOO_AUTH`) gives the same message in about 2 s; no run hangs.
+
+To check this locally, run `npm run build && scripts/smoke-nokey.sh`. It starts the production server with no key and no harness and checks all of the above. Set `QLOO_ALLOW_SAMPLE=1` only if you want labelled sample data instead (local development without a key uses it automatically).
+
+## Judge-ready checklist (do these on the hosted URL, in order)
+
+1. **Build:** the first `deploy` is the Docker/Cloud Build check (never run locally: no Docker daemon here). Do it this week, not on 29 Oct.
+2. **Warm instance:** `judging-on` before 2 Nov (min instances 1, judging caps).
+3. **No-key path:** run `scripts/smoke-nokey.sh` locally, and on the hosted URL confirm demo posters, their route checks, Apply and share links work.
+4. **Shared office IPs:** judging caps allow 20 live tours per IP per hour; the daily cap (120) and the Claude caps protect the budget.
+5. **Claude budget:** 45 calls/day within $4 for 14 days (see `deploy/cloudrun.judging.env.yaml`); past it, labelled template text.
+6. **Share links after scale-to-zero:** open a share link, wait for the instance to stop (or redeploy), open it again (checks the /data bucket mount and write access).
+7. **After 31 Oct:** `/api/health`, then one live tour; if the Qloo key is gone, the "Live Qloo data isn't available… demo tours still work" path.
+8. **Assets:** OpenFreeMap tiles and the Nominatim user agent from the hosted origin; no `.env.local` in the upload (`.gcloudignore`).
+9. **Phone and desktop pass:** 1440×900 and 390×844 from a network other than the dev machine.
+
 ## Notes
 
 - **Not yet verified:**
   - **`docker build`.** No Docker daemon is available here. The first Cloud Build run is the check, and its log shows `qloo --version` from the image build.
   - **The Cloud Storage volume.** It mounts with `uid=1000;gid=1000` so the container's `node` user can write. If writes fail, share links and the counter won't persist and the error shows in the service log. The fix is the volume's `mount-options`.
-- **What survives scale to zero:** the model-call cap (persisted under `/data`) and share links. The per-visitor hourly limits and the 40-tour daily cap are in memory, so they reset after the service scales to zero. That is acceptable for Qloo quota; the cap on paid model calls is the persisted one.
-- **Scale to zero:** min instances 0 means a cold start of a few seconds after idle. For judging week you can set min instances to 1 (`gcloud run services update tour-scout --min-instances 1 --region us-central1`). That bills idle time, so it is your call; set it back afterwards.
+- **What survives scale to zero:** the daily caps (live tours and model calls, both saved under `/data`) and share links. The per-visitor hourly limits are in memory and reset on a restart.
+- **Judging window (2–16 Nov):** `scripts/deploy-cloudrun.sh judging-on` sets min instances 1 (no cold starts; idle time is billed, a few dollars for the fortnight) and applies the higher caps in [`deploy/cloudrun.judging.env.yaml`](../deploy/cloudrun.judging.env.yaml): 20 live tours per IP per hour (judges may share an office address), 120 per day, and 45 model calls per day under a separate $4 Claude spend ceiling (the math is in the file). `judging-off` restores scale-to-zero and the normal caps afterwards.
 - **OpenStreetMap:** neighbourhood names use Nominatim at no more than 1 request per second, with a cache and the `NOMINATIM_USER_AGENT` above. Map tiles come from OpenFreeMap (free, no key).
 - **Rollback:** `gcloud run services update-traffic tour-scout --to-revisions <REVISION>=100 --region us-central1`. Revisions are listed in the console.
 - **After judging:** delete the service, the bucket and the Artifact Registry images (or the whole project) to stop all charges. Rotate the Qloo and Claude keys if they were ever shared.

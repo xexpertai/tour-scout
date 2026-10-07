@@ -129,7 +129,8 @@ body {
 .crowded .lbl { display: none; }
 .cand-score { font-family: var(--font-display); font-size: 20px; line-height: 1; color: var(--ink); text-shadow: 0 0 6px var(--bg), 0 0 2px var(--bg); font-variant-numeric: tabular-nums; }
 .cand-name { font-size: 13px; font-weight: 600; color: var(--ink); text-shadow: 0 0 5px var(--bg), 0 0 2px var(--bg), 0 0 1px var(--bg); }
-.cand.won .mk { opacity: 0 !important; }
+/* A winning city's score label clears at once, before its stop label appears (no doubled names). */
+.cand.won .mk { opacity: 0 !important; transition: opacity .12s ease 0ms; }
 .cand.lost .mk { opacity: .5; }
 .cand.lost .cand-dot { inset: 3px; background: var(--muted); box-shadow: none; }
 .cand.lost .cand-score { font-size: 14px; color: var(--muted); }

@@ -1,5 +1,6 @@
 "use client";
 
+import { tidyTag, venueTown } from "@/lib/text";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Insight } from "@/lib/guard";
@@ -10,7 +11,7 @@ const pad = (n: number) => String(n).padStart(2, "0");
 const isCoordinate = (name: string) => /^-?\d+(\.\d+)?,\s*-?\d/.test(name);
 
 /** The pitch email as a draft: subject line, body, copy button and the "check every claim" note. */
-export function PitchLetter({ pitch, city }: { pitch: Insight; city: string }) {
+export function PitchLetter({ pitch, city, to }: { pitch: Insight; city: string; to?: { name: string; town?: string } }) {
   const [copied, setCopied] = useState(false);
   const [subjectLine, ...rest] = pitch.text.split("\n");
   const hasSubject = /^subject:/i.test(subjectLine);
@@ -24,7 +25,7 @@ export function PitchLetter({ pitch, city }: { pitch: Insight; city: string }) {
   return (
     <div className="rounded-xl border border-line bg-bg p-5">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line pb-3 text-sm text-muted">
-        <span>To: the booker, {clean(city)}</span>
+        <span>To: {to ? <><b className="font-semibold text-ink">{clean(to.name)}</b>{/team or agent$/.test(to.name) ? "" : " booking"}{to.town ? `, ${to.town}` : ""}</> : `the booker, ${clean(city)}`}</span>
         <button type="button" onClick={copy} className="no-print min-h-11 rounded-lg border border-line px-4 text-sm hover:border-accent">{copied ? "Copied ✓" : "Copy"}</button>
       </div>
       {hasSubject && <p className="mt-3 text-lg font-semibold">{subjectLine.replace(/^subject:\s*/i, "")}</p>}
@@ -38,7 +39,7 @@ export function PitchLetter({ pitch, city }: { pitch: Insight; city: string }) {
 }
 
 /** A modal sheet (bottom sheet on phones) for one stop's pitch email. */
-function PitchSheet({ pitch, city, onClose }: { pitch: Insight; city: string; onClose: () => void }) {
+function PitchSheet({ pitch, city, to, onClose }: { pitch: Insight; city: string; to?: { name: string; town?: string }; onClose: () => void }) {
   const close = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     close.current?.focus();
@@ -55,7 +56,7 @@ function PitchSheet({ pitch, city, onClose }: { pitch: Insight; city: string; on
           <h3 className="font-display text-2xl uppercase">Pitch · {clean(city)}</h3>
           <button ref={close} type="button" onClick={onClose} aria-label="Close" className="grid h-11 w-11 place-items-center rounded-full text-xl text-muted hover:text-ink">×</button>
         </div>
-        <PitchLetter pitch={pitch} city={city} />
+        <PitchLetter pitch={pitch} city={city} to={to} />
       </div>
     </div>,
     document.getElementById("app-root") ?? document.body,
@@ -70,8 +71,8 @@ const Flame = () => (
  * One stop as a ticket stub: number, city and score up top; a short "why"; rooms and the opener
  * side by side; the pitch in its own sheet. Arena-scale acts get no room or pitch suggestions.
  */
-export function StopTicket({ stop, active, writing, emerging = false, arena = false, rank, of }: {
-  stop: StopView; active: boolean; writing: boolean; emerging?: boolean; arena?: boolean; rank?: number; of?: number;
+export function StopTicket({ stop, active, writing, emerging = false, arena = false, comedian = false, rank, of }: {
+  stop: StopView; active: boolean; writing: boolean; emerging?: boolean; arena?: boolean; comedian?: boolean; rank?: number; of?: number;
 }) {
   const n = stop.order ?? stop.rank;
   const [more, setMore] = useState(false);
@@ -79,6 +80,10 @@ export function StopTicket({ stop, active, writing, emerging = false, arena = fa
   // Sample runs mark Qloo-derived names "(sample)"; city names are reference geography, so check the data too.
   const sample = isSample(stop.city.name) || stop.venues.some((v) => isSample(v.name)) || isSample(stop.opener?.name ?? "");
   const rooms = more ? stop.venues : stop.venues.slice(0, 2);
+  // A support slot is granted by the headliner's team; the room's booker is the alternative contact.
+  const pitchTo = emerging && stop.opener
+    ? { name: `${clean(stop.opener.name)}'s team or agent`, town: stop.venues[0] ? `or ${clean(stop.venues[0].name)} booking` : undefined }
+    : stop.venues[0] ? { name: stop.venues[0].name, town: venueTown(stop.venues[0]) } : undefined;
   const shared = stop.opener?.overlap?.shared.slice(0, 3) ?? [];
   return (
     <article id={`stop-${stop.stopId}`} data-stop={stop.stopId} aria-label={`Stop ${n}: ${clean(stop.city.name)}`}
@@ -132,12 +137,17 @@ export function StopTicket({ stop, active, writing, emerging = false, arena = fa
           {stop.opener && (
             <div>
               <h4 className="flex items-center gap-1.5 text-sm font-semibold">
-                {emerging ? "Support slot to pitch for" : arena ? "Fans here also like" : "Opener idea"} <Chip kind={sample ? "sample" : "qloo"} /><Cites ids={[stop.opener.evidence]} />
+                {emerging ? "Support slot to pitch for" : arena ? "Fans here also like" : comedian ? "Feature act idea" : "Opener idea"} <Chip kind={sample ? "sample" : "qloo"} /><Cites ids={[stop.opener.evidence]} />
               </h4>
               <p className="mt-1 font-display text-3xl uppercase leading-none">{clean(stop.opener.name)}</p>
+              {stop.opener.oversize && (
+                <p role="note" className="mt-2 rounded-md border border-sample/60 px-2 py-1 text-xs text-sample">
+                  Above your size fit{stop.opener.popularity !== undefined && stop.opener.sizeCap !== undefined ? ` (Qloo popularity ${stop.opener.popularity.toFixed(2)} vs ${stop.opener.sizeCap.toFixed(2)})` : ""}: no smaller act with affinity here, so this is the closest match. The route check looks for a better one.
+                </p>
+              )}
               {shared.length > 0 && (
                 <p className="mt-2 text-sm text-muted">
-                  Shared tastes: <span className="text-ink">{shared.map(clean).join(", ")}</span> <Cites ids={[stop.opener.overlap!.evidence]} />
+                  Shared tastes: <span className="text-ink">{shared.map((x) => tidyTag(clean(x))).join(", ")}</span> <Cites ids={[stop.opener.overlap!.evidence]} />
                 </p>
               )}
             </div>
@@ -149,10 +159,10 @@ export function StopTicket({ stop, active, writing, emerging = false, arena = fa
             <button type="button" onClick={() => setSheet(true)}
               className="no-print inline-flex min-h-11 items-center gap-2 rounded-lg border border-line px-4 text-sm font-semibold hover:border-accent">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" /></svg>
-              Pitch email to the booker
+              {emerging ? "Support-slot request email" : "Pitch email to the booker"}
             </button>
-            {sheet && <PitchSheet pitch={stop.pitch} city={stop.city.name} onClose={() => setSheet(false)} />}
-            <div className="hidden print:block"><PitchLetter pitch={stop.pitch} city={stop.city.name} /></div>
+            {sheet && <PitchSheet pitch={stop.pitch} city={stop.city.name} to={pitchTo} onClose={() => setSheet(false)} />}
+            <div className="hidden print:block"><PitchLetter pitch={stop.pitch} city={stop.city.name} to={pitchTo} /></div>
           </>
         )}
         {!arena && !stop.pitch && writing && !stop.textDone && <Writing label="Drafting the pitch…" />}

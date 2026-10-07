@@ -4,7 +4,8 @@
  *
  * LLM_PROVIDER=claude|gemini|scripted picks the primary (default scripted, so development spends no
  * model credit). A failing primary falls back to the next configured provider, then to scripted.
- * LLM_DAILY_CAP bounds model calls per UTC day (default 40); token counts are logged per call.
+ * LLM_DAILY_CAP bounds model calls per UTC day (default 40) and LLM_SPEND_CAP_USD the total spend
+ * (default $4, persisted); token counts and cost are logged per call. Past either, text is templated.
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -24,7 +25,11 @@ export type SynthesisInput = {
    * the audience and the city's best-matching live room. fanHotspot marks cities near a cell of the
    * country-wide fan heatmap.
    */
-  stops: { stop_id: string; city: string; affinity: number; evidence: string; fanHotspot?: boolean; hotspotEvidence?: string; cluster?: string; clusterEvidence?: string; venues: string[]; venuesEvidence?: string; opener?: string; openerEvidence?: string; shared?: string[]; sharedEvidence?: string }[];
+  stops: { stop_id: string; city: string; affinity: number; evidence: string; fanHotspot?: boolean; hotspotEvidence?: string; cluster?: string; clusterEvidence?: string; venues: string[]; venuesEvidence?: string;
+    /** The room the pitch is addressed to (the stop's first room) and the town it is in. */
+    pitchTo?: { venue: string; town?: string };
+    /** The city's rank among all scored cities (1 = best) and how many were scored. */
+    rank?: number; of?: number; opener?: string; openerEvidence?: string; shared?: string[]; sharedEvidence?: string }[];
 };
 
 type RawInsight = { text: string; evidence: string[] };
@@ -69,10 +74,15 @@ Rules:
 - Demographic values are relative over/under-index scores, not percentages.
 - Mention demographics only as Qloo's aggregate index with the exact bucket and value, e.g. "ages 45–54 over-index (+0.53)". Never characterise the audience by gender or age ("skews male", "older crowd", "mostly women").
 - Demographics describe the whole audience nationally, in aggregate; they are not per city. Never attribute them to a city, never say a group "dominates", and never recommend targeting, excluding, framing for or marketing to an age or gender group.
-- If artist.proxyOf is set, the act is new and has no Qloo data of its own: describe the audience as "fans of <proxyOf names>", never as the act's own fans or tags. In that case a stop's "opener" is an established act the new act could pitch to open for (a support slot), not an act opening for them.
+- If artist.proxyOf is set, the act is new and has no Qloo data of its own: describe the audience as "fans of <proxyOf names>", never as the act's own fans or tags, and never describe the new act's own music, style or values. In that case a stop's "opener" is an act the new act could ask to support (a support slot: the new act opens for them), never an act opening for the new act.
+- If no stop has fanHotspot: true, the cities were found by room affinity, not by a fan map: never say fans cluster, concentrate, gather or are densest in these cities; say Qloo's room data ranks them.
+- Never use he, she, his or her for the act; use its name or "they".
 - Never call anything "confirmed"; Qloo shows taste affinity, not confirmed demand.
 - Risks are about touring and the limits of this data (affinity is not demand, rooms unconfirmed, routing, dates, competing shows); never about an audience group.
-Write, in this order: a summary (at most 2 sentences); for each stop a "why" (at most 40 words) and a pitch email to the venue booker (a subject line, then at most 90 words, grounded in the stop's data and the fan profile); exactly 3 show-theme ideas; exactly 3 merch ideas; 3 risks. Keep every item short.`;
+- The pitch is an email a booker could receive today. Address it to the room in pitchTo ("Hi <venue> team,"), and name its town (pitchTo.town) if given; never place a room in the fans' cluster neighbourhood (the cluster is where fans concentrate, not where rooms are).
+- In the pitch, never quote affinity numbers, scores, evidence ids or the words "room affinity": say what Qloo's taste data shows in plain words (e.g. "Qloo's taste data ranks <city> among the strongest cities for this audience").
+- End the pitch with a clear ask for a date, and keep these placeholders exactly, for the sender to fill in: [dates], [draw / last play in the area], [ticket price], [links].
+Write, in this order: a summary (at most 2 sentences); for each stop a "why" (at most 40 words) and a pitch email to that room's booker (a "Subject:" line, then at most 110 words, grounded in the stop's data and the fan profile); exactly 3 show-theme ideas; exactly 3 merch ideas; 3 risks. Keep every item short.`;
 
 const insight = { type: "object", properties: { text: { type: "string" }, evidence: { type: "array", items: { type: "string" } } }, required: ["text", "evidence"] };
 export const SUBMIT_TOUR_SCHEMA = {
@@ -87,7 +97,50 @@ export const SUBMIT_TOUR_SCHEMA = {
   required: ["summary", "stops", "theme", "merch", "risks"],
 };
 const SUBMIT_TOUR = { name: "submit_tour", description: "Submit the tour plan text. Call exactly once." };
-const userContent = (input: SynthesisInput) => `Tour data (JSON):\n${JSON.stringify(input)}\n\nCall submit_tour with the plan.`;
+/**
+ * The model gets an explicit "facts allowed" block per stop and a pitch skeleton, so it writes from
+ * what is true for this plan instead of from habit (it otherwise invented hotspots and described a
+ * fictional act's music).
+ */
+export function factsBlock(input: SynthesisInput): string {
+  const emerging = Boolean(input.artist.proxyOf?.length);
+  const who = emerging ? `fans of ${input.artist.proxyOf!.join(" and ")}` : `${input.artist.name}'s audience`;
+  const lines = [
+    `ACT: ${input.artist.name}. ${emerging
+      ? `A new act unknown to Qloo. Qloo knows nothing about its music. Write only about the AUDIENCE: ${who}. Never describe ${input.artist.name}'s sound, songwriting, style or values.`
+      : `Describe the audience through its tags; do not invent facts about the act.`} Refer to the act by name or "they", never he/she.`,
+    `AUDIENCE TAGS: ${input.fan.tags.join(", ") || "(none)"}`,
+    ...input.stops.map((s) => [
+      `STOP ${s.stop_id} ${s.city}: ranks #${s.rank ?? "?"} of ${s.of ?? "?"} scored cities${s.rank && s.rank <= 3 ? " (you may say 'among the strongest')" : " (never say 'among the strongest' or 'top': say it is a strong fit on the route)"}`,
+      `  fan hotspot near this city: ${s.fanHotspot ? "YES (you may say it is near a Qloo fan hotspot)" : "NO (never mention a hotspot for this stop)"}`,
+      `  fans concentrate around (city-level, not a hotspot): ${s.cluster ?? "(not named)"}`,
+      `  pitch goes to: ${s.pitchTo ? `${s.pitchTo.venue}${s.pitchTo.town ? ` in ${s.pitchTo.town}` : ""}` : "(no room)"}; other rooms: ${s.venues.slice(1, 3).join(", ") || "(none)"}`,
+      `  ${emerging ? "support-slot idea (the new act would open for them; not bigger than the sounds-like artist)" : "suggested opener (not bigger than the act)"}: ${s.opener ?? "(none)"}${s.shared?.length ? `; shared tastes: ${s.shared.join(", ")}` : ""}`,
+    ].join("\n")),
+    "",
+ ...(emerging ? [
+    "PITCH SKELETON (a support-slot request goes to the HEADLINER's team or agent, not the venue; fill the slots; keep the bracketed placeholders exactly):",
+    "  Subject: Support slot request: <act> with <support act> in <city>, [their dates]",
+    "  Hi <support act> team,",
+    "  \"<act> is a new act whose audience lines up with yours: <one sentence on what Qloo shows about the shared AUDIENCE, naming the shared tastes>.\"",
+    "  \"If <support act> plays <city> around [their dates], we'd love to open; <room> is a room these fans favour.\"",
+    "  About <act>: [one line about the act]. Draw / last play in the area: [draw / last play in the area]. Links: [links].",
+  ] : [
+    "PITCH SKELETON (fill the slots; keep the bracketed placeholders exactly):",
+    "  Subject: <act> at <room>, [dates]",
+    "  Hi <room> team,",
+    "  <one sentence on what Qloo's taste data shows about the AUDIENCE in this city, in plain words>",
+    "  opener line: \"For support we'd like to approach <opener>, whose fans share <shared tastes>.\"",
+    "  Draw / last play in the area: [draw / last play in the area]. Ticket price: [ticket price]. Links: [links].",
+    "  Do you have a hold around [dates]?",
+  ]),
+    "",
+    "GOOD pitch line: \"Qloo's taste data shows fans of Joanna Sternberg here favour intimate, introspective indie folk.\"",
+    `BAD pitch line: \"${input.artist.name}'s honest songwriting connects with Burlington fans near a Qloo fan hotspot (room affinity 94.1).\" (describes the act, may claim a hotspot, quotes a score)`,
+  ];
+  return lines.join("\n");
+}
+const userContent = (input: SynthesisInput) => `Facts allowed:\n${factsBlock(input)}\n\nTour data (JSON):\n${JSON.stringify(input)}\n\nCall submit_tour with the plan.`;
 
 // ---------------------------------------------------------------- Gemini (Interactions API)
 const geminiProvider: SynthesisProvider = {
@@ -134,8 +187,12 @@ const claudeProvider: SynthesisProvider = {
   name: "claude",
   async synthesize(input, onPartial) {
     const ids = input.stops.map((s) => s.stop_id);
-    const first = await claudeOnce(input, onPartial);
-    if (usableSynthesis(first, ids)) return first;
+    // One retry when the streamed tool input arrives malformed (the SDK fails to parse it) or is unusable.
+    const first = await claudeOnce(input, onPartial).catch((e) => {
+      if (e instanceof LlmError) throw e;
+      return undefined;
+    });
+    if (first && usableSynthesis(first, ids)) return first;
     console.warn(JSON.stringify({ event: "llm_bad_output", provider: "claude", model: CLAUDE_MODEL, retry: true }));
     const second = await claudeOnce(input, onPartial);
     if (usableSynthesis(second, ids)) return second;
@@ -186,6 +243,44 @@ async function claudeOnce(input: SynthesisInput, onPartial?: PartialHandler): Pr
 }
 
 // ---------------------------------------------------------------- scripted (no model)
+/** A booking email a booker could act on: addressed to the room, plain words, a clear ask, placeholders to fill. */
+export function templatePitch(input: SynthesisInput, s: SynthesisInput["stops"][number], name: string): string {
+  const room = s.pitchTo?.venue ? clean(s.pitchTo.venue) : undefined;
+  const strongest = s.rank !== undefined && s.rank <= 3;
+  const rankLine = strongest ? `ranks ${clean(s.city)} among the strongest cities for` : `shows a strong fit in ${clean(s.city)} for`;
+  // A support slot is the headliner's to give: the request goes to their team, with the room as context.
+  if (input.artist.proxyOf?.length && s.opener) {
+    const head = clean(s.opener);
+    return [
+      `Subject: Support slot request: ${name} with ${head} in ${clean(s.city)}, [their dates]`,
+      "",
+      `Hi ${head} team,`,
+      "",
+      `${name} is a new act whose audience lines up with yours: Qloo's taste data ${rankLine} fans of ${input.artist.proxyOf.map(clean).join(" and ")}${s.shared?.length ? `, who share tastes with ${possessive(head)} fans (${s.shared.slice(0, 3).map(clean).join(", ")})` : ""}. If ${head} plays ${clean(s.city)} around [their dates], we'd love to open${room ? `; ${room} is a room these fans favour` : ""}.`,
+      "",
+      "About us: [one line about the act]. Draw / last play in the area: [draw / last play in the area]. Links: [links].",
+    ].join("\n");
+  }
+  const where = room ? `${room}${s.pitchTo?.town ? ` in ${s.pitchTo.town}` : ""}` : `a room in ${clean(s.city)}`;
+  const audience = input.artist.proxyOf?.length ? `fans of ${input.artist.proxyOf.map(clean).join(" and ")}` : `${possessive(name)} audience`;
+  const support = s.opener
+    ? input.artist.proxyOf?.length
+      ? ` We'd love to be considered for a support slot with ${clean(s.opener)}, whose audience shares tastes with ours${s.shared?.length ? ` (${s.shared.slice(0, 2).map(clean).join(", ")})` : ""}.`
+      : ` For support we'd like to approach ${clean(s.opener)}, whose audience shares tastes with ours${s.shared?.length ? ` (${s.shared.slice(0, 2).map(clean).join(", ")})` : ""}.`
+    : "";
+  return [
+    `Subject: ${name} at ${room ?? clean(s.city)}, [dates]`,
+    "",
+    `Hi ${room ?? "there"} team,`,
+    "",
+    `I'm booking ${name} and would love a date at ${where}. Qloo's taste data ${rankLine} ${audience}${s.cluster ? `, with fans concentrated around ${clean(s.cluster)}` : ""}.${support}${input.capacity ? ` We're looking at rooms of ${input.capacity[0]}–${input.capacity[1]} (our own target).` : ""}`,
+    "",
+    "Draw / last play in the area: [draw / last play in the area]. Ticket price: [ticket price]. Links: [links].",
+    "",
+    "Do you have a hold around [dates]? Happy to send anything else you need.",
+  ].join("\n");
+}
+
 const clean = (s: string) => s.replace(/\s*\(sample\)$/, "");
 export const scriptedProvider: SynthesisProvider = {
   name: "scripted",
@@ -196,7 +291,7 @@ export const scriptedProvider: SynthesisProvider = {
     const allStops = input.stops.map((s) => s.evidence);
     return {
       summary: {
-        text: `${input.stops.map((s) => clean(s.city)).join(", ")} score highest on Qloo room affinity for ${input.artist.proxyOf?.length ? `fans of ${input.artist.proxyOf.map(clean).join(" and ")}` : `${possessive(name)} audience`}. ${input.artist.arenaScale ? "This is an arena-scale act: the plan shows where the fans are, but no club or theatre rooms are suggested." : "Each stop below names the neighbourhood where those fans cluster."}`,
+        text: `${input.stops.map((s) => clean(s.city)).join(", ")} score highest on Qloo room affinity for ${input.artist.proxyOf?.length ? `fans of ${input.artist.proxyOf.map(clean).join(" and ")}` : `${possessive(name)} audience`}. ${input.artist.arenaScale ? "This is an arena-scale act: the plan shows where the fans are, but no club or theatre rooms are suggested." : input.stops.some((s) => s.fanHotspot) ? "Each stop below names the neighbourhood where those fans cluster." : "No stop is near a country-wide fan hotspot, so this is a rooms-led plan."}`,
         evidence: [...new Set(allStops)],
       },
       stops: input.stops.map((s) => ({
@@ -206,7 +301,7 @@ export const scriptedProvider: SynthesisProvider = {
           evidence: [s.evidence, s.hotspotEvidence, s.clusterEvidence].filter((x): x is string => Boolean(x)),
         },
         pitch: {
-          text: `Subject: ${name}, ${clean(s.city)} date\n\nHi, I'm booking ${name} and would love to bring the show to your room. Qloo's taste data shows ${clean(s.city)} among the strongest cities for ${possessive(name)} audience${s.cluster ? `, with affinity concentrated around ${clean(s.cluster)}` : ""}.${s.opener ? ` We'd pair it with ${clean(s.opener)}, whose audience shares tastes with ours${s.shared?.length ? ` (${s.shared.slice(0, 2).map(clean).join(", ")})` : ""}.` : ""}${input.capacity ? ` We're targeting rooms of ${input.capacity[0]}–${input.capacity[1]} (our own target, not Qloo data).` : ""} Happy to share the full data behind this.`,
+          text: templatePitch(input, s, name),
           evidence: [s.evidence, s.clusterEvidence, s.openerEvidence, s.sharedEvidence].filter((x): x is string => Boolean(x)),
         },
       })),
@@ -225,29 +320,73 @@ export const scriptedProvider: SynthesisProvider = {
 
 // ---------------------------------------------------------------- budget and selection
 const DAILY_CAP = Math.max(0, Number(process.env.LLM_DAILY_CAP ?? 40));
-const usageFile = process.env.DATA_DIR ? path.join(process.env.DATA_DIR, "llm-usage.json") : undefined;
-let usage: { day: string; calls: number } | undefined;
+/** Hard ceiling on total model spend (USD) for this deployment; 0 disables model calls. Persisted. */
+const SPEND_CAP_USD = Math.max(0, Number(process.env.LLM_SPEND_CAP_USD ?? 4));
+/** Claude Haiku 4.5 list prices per million tokens (input, output). */
+const PRICE_PER_MTOK = { input: 1, output: 5 };
+/** Headroom kept before the ceiling: the largest single call seen (a synthesis with 8k max output ≈ $0.05). */
+const CALL_RESERVE_USD = 0.05;
+/** The spend ceiling applies per budget period (e.g. "pre-judging", "judging"); a new period starts at $0. */
+const BUDGET_PERIOD = process.env.LLM_BUDGET_PERIOD?.trim() || "default";
+const usageFile = () => (process.env.DATA_DIR ? path.join(process.env.DATA_DIR, "llm-usage.json") : undefined);
+type Usage = { day: string; calls: number; spentUsd: number; period?: string };
+let usage: Usage | undefined;
 
-/** Counts one model call against the daily cap (persisted under DATA_DIR when set) or refuses it. */
-export function takeDailyBudget() {
-  const day = new Date().toISOString().slice(0, 10);
-  if (!usage && usageFile) {
-    try { usage = JSON.parse(readFileSync(/*turbopackIgnore: true*/ usageFile, "utf8")); } catch { /* first run */ }
+function loadUsage(): Usage {
+  const file = usageFile();
+  if (!usage && file) {
+    try { usage = JSON.parse(readFileSync(/*turbopackIgnore: true*/ file, "utf8")); } catch { /* first run */ }
   }
-  if (!usage || usage.day !== day) usage = { day, calls: 0 };
-  if (usage.calls >= DAILY_CAP) throw new LlmError(`Today's AI budget (${DAILY_CAP} calls) is used up; showing templated text instead.`, "LLM_QUOTA");
-  usage.calls++;
-  if (usageFile) {
-    try {
-      mkdirSync(/*turbopackIgnore: true*/ path.dirname(usageFile), { recursive: true });
-      writeFileSync(/*turbopackIgnore: true*/ usageFile, JSON.stringify(usage));
-    } catch { /* counting still works in memory */ }
-  }
+  usage ??= { day: "", calls: 0, spentUsd: 0, period: BUDGET_PERIOD };
+  if ((usage.period ?? "default") !== BUDGET_PERIOD) { usage.period = BUDGET_PERIOD; usage.spentUsd = 0; }
+  usage.spentUsd ??= 0;
+  return usage;
+}
+function saveUsage() {
+  const file = usageFile();
+  if (!file || !usage) return;
+  try {
+    mkdirSync(/*turbopackIgnore: true*/ path.dirname(file), { recursive: true });
+    writeFileSync(/*turbopackIgnore: true*/ file, JSON.stringify(usage));
+  } catch { /* counting still works in memory */ }
 }
 
-/** One structured log line per model call: counts only, never prompt or output text. */
+/** Counts one model call against the daily cap and the total spend ceiling (both persisted) or refuses it. */
+export function takeDailyBudget() {
+  const day = new Date().toISOString().slice(0, 10);
+  const u = loadUsage();
+  if (u.day !== day) { u.day = day; u.calls = 0; }
+  if (u.spentUsd + CALL_RESERVE_USD > SPEND_CAP_USD) throw new LlmError("AI text paused: this demo's AI budget is used up", "LLM_QUOTA");
+  if (u.calls >= DAILY_CAP) throw new LlmError(`AI text paused: today's ${DAILY_CAP} AI calls are used up`, "LLM_QUOTA");
+  u.calls++;
+  saveUsage();
+}
+
+/** Whether model text is available right now, and why not (for /api/health and the plan header). */
+export function llmStatus(): { provider: string; available: boolean; reason?: string } {
+  const provider = process.env.LLM_PROVIDER ?? "scripted";
+  if (provider === "scripted") return { provider, available: false, reason: "templated text, no AI configured" };
+  const key = provider === "claude" ? process.env.CLAUDE_API_KEY : provider === "gemini" ? process.env.GEMINI_API_KEY : undefined;
+  const backup = provider === "claude" ? process.env.GEMINI_API_KEY : provider === "gemini" ? process.env.CLAUDE_API_KEY : undefined;
+  if (!key && !backup) return { provider, available: false, reason: `${provider === "claude" ? "CLAUDE_API_KEY" : "GEMINI_API_KEY"} is not set` };
+  const u = loadUsage();
+  const day = new Date().toISOString().slice(0, 10);
+  if (u.spentUsd + CALL_RESERVE_USD > SPEND_CAP_USD) return { provider, available: false, reason: "this demo's AI budget is used up" };
+  if (u.day === day && u.calls >= DAILY_CAP) return { provider, available: false, reason: `today's ${DAILY_CAP} AI calls are used up` };
+  return { provider, available: true };
+}
+
+/** Model spend so far (USD), for the health check. */
+export const spentUsd = () => +loadUsage().spentUsd.toFixed(4);
+
+/** One structured log line per model call (counts and cost only, never prompt or output text); adds the cost to the total. */
 export function logUsage(provider: string, model: string, tokens: { input?: number; output?: number }) {
-  console.info(JSON.stringify({ event: "llm_usage", provider, model, inputTokens: tokens.input, outputTokens: tokens.output, callsToday: usage?.calls, cap: DAILY_CAP }));
+  const costUsd = ((tokens.input ?? 0) * PRICE_PER_MTOK.input + (tokens.output ?? 0) * PRICE_PER_MTOK.output) / 1e6;
+  const u = loadUsage();
+  u.spentUsd += costUsd;
+  saveUsage();
+  console.info(JSON.stringify({ event: "llm_usage", provider, model, inputTokens: tokens.input, outputTokens: tokens.output, costUsd: +costUsd.toFixed(5),
+    spentUsd: +u.spentUsd.toFixed(4), spendCapUsd: SPEND_CAP_USD, callsToday: u.calls, cap: DAILY_CAP }));
 }
 
 const PROVIDERS = { claude: claudeProvider, gemini: geminiProvider, scripted: scriptedProvider } as const;

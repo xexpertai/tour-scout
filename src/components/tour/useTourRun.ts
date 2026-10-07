@@ -39,7 +39,11 @@ export type ScoutCheck = { label: string; detail?: string; status: "running" | "
 /** "checking" opens a running step; the next Qloo result closes the oldest open one. */
 function addCheck(checks: ScoutCheck[], e: { type: "checking" | "step"; label: string; failed?: boolean }): ScoutCheck[] {
   if (e.type === "checking") return [...checks, { label: e.label.replace(/^Scout is /, "").replace(/…$/, ""), status: "running" }];
-  const open = checks.findIndex((c) => c.status === "running");
+  // Tool results arrive out of order when the agent runs tools in parallel: pair a result with the
+  // running check that names the same place ("looking for openers in Boston" ↔ "Boston: openers …").
+  const place = e.label.split(":")[0].trim().toLowerCase();
+  const named = checks.findIndex((c) => c.status === "running" && place.length > 2 && c.label.toLowerCase().includes(place));
+  const open = named >= 0 ? named : checks.findIndex((c) => c.status === "running");
   if (open < 0) return [...checks, { label: e.label, status: e.failed ? "failed" : "done" }];
   return checks.map((c, i) => (i === open ? { ...c, detail: e.label, status: e.failed ? "failed" : "done" } : c));
 }
@@ -89,12 +93,14 @@ function reduce(state: RunState, event: TourEvent): RunState {
     case "stop_text":
       return { ...state, stops: state.stops.map((s) => (s.stopId === event.stopId ? { ...s, why: event.why, pitch: event.pitch, textDone: true } : s)) };
     case "llm_fallback":
-      return { ...state, fallback: event.reason };
+      return { ...state, fallback: event.reason, llm: `scripted (fallback from ${event.from})` };
     case "plan":
       return {
         ...state,
         status: "done",
         plan: event.plan,
+        // The header names who actually wrote the text (template when the model was unavailable).
+        llm: event.plan.mode?.llm ?? state.llm,
         summary: event.plan.summary,
         fan: event.plan.fan,
         coverage: event.plan.coverage ?? state.coverage,
@@ -138,7 +144,7 @@ export function useTourRun(sharedPlan?: TourPlan) {
       const res = await fetch("/api/tour", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input), signal: controller.signal });
       if (!res.ok || !res.body) {
         const body = await res.json().catch(() => ({}));
-        setState((s) => ({ ...s, status: "error", error: { message: body.error ?? `Request failed (${res.status})`, code: body.code, retryable: res.status !== 400 } }));
+        setState((s) => ({ ...s, status: "error", error: { message: body.error ?? `Request failed (${res.status})`, code: body.code, retryable: res.status !== 400 && res.status !== 503 } }));
         return;
       }
       const reader = res.body.getReader();

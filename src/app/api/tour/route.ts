@@ -1,3 +1,4 @@
+import { liveUnavailable } from "@/lib/qloo";
 import { clientKey, limitedResponse, runCache, take, takeDailyRun } from "@/lib/limits";
 import { NDJSON_HEADERS, ndjsonStream } from "@/lib/ndjson";
 import { loadPlan, savePlan } from "@/lib/store";
@@ -29,6 +30,7 @@ function parse(body: Record<string, unknown>): TourInput | string {
     artist,
     emerging,
     region: str(body.region, 80) || undefined,
+    startFrom: str(body.startFrom, 80) || undefined,
     candidateCities: candidateCities.length ? candidateCities : undefined,
     stops: candidateCities.length ? Math.min(stops, candidateCities.length) : stops,
     capacity: cap.length === 2 && cap.every((n) => Number.isFinite(n) && n > 0) ? [Math.min(cap[0], cap[1]), Math.max(cap[0], cap[1])] : undefined,
@@ -38,7 +40,7 @@ function parse(body: Record<string, unknown>): TourInput | string {
 /** Same artist, signals, places and stops → same plan; used to reuse recent runs. */
 const cacheKey = (i: TourInput) => JSON.stringify([
   i.artist?.id ?? null, i.emerging?.proxies.map((p) => p.id).sort() ?? null, i.emerging?.name ?? null,
-  i.region?.toLowerCase() ?? null, i.candidateCities?.map((c) => c.toLowerCase()).sort() ?? null, i.stops, i.capacity ?? null,
+  i.region?.toLowerCase() ?? null, i.startFrom?.toLowerCase() ?? null, i.candidateCities?.map((c) => c.toLowerCase()).sort() ?? null, i.stops, i.capacity ?? null,
 ]);
 
 /** The events of a stored plan, so a reused run renders exactly like a live one. */
@@ -63,6 +65,8 @@ export async function POST(req: Request) {
   const cached = cachedId ? await loadPlan(cachedId) : undefined;
   if (cached) return new Response(ndjsonStream(replayPlan(cached)), { headers: HEADERS });
 
+  const off = await liveUnavailable();
+  if (off) return Response.json({ error: off, code: "QLOO_UNAVAILABLE" }, { status: 503 });
   const perClient = take("tour", clientKey(req));
   if (!perClient.ok) return limitedResponse(perClient);
   const daily = takeDailyRun();

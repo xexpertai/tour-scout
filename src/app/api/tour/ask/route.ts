@@ -31,8 +31,10 @@ async function* answer(plan: TourPlan, question: string, forked: boolean, signal
   const result = (useClaude ? run(claudeAgentModel) : run(scriptedAgentModel(plan, question)))
     .catch(async (e) => {
       // Without the model the scout still answers, from templates, and says so.
-      if (!(e instanceof LlmError)) throw e;
-      events.push({ type: "step", label: `AI scout unavailable (${e.message}); using the templated scout`, failed: true });
+      // Any model failure (budget, key, network) falls back to the templated scout and says so.
+      if (signal?.aborted) throw e;
+      const why = e instanceof LlmError ? e.message : "the AI model failed";
+      events.push({ type: "step", label: `${why.startsWith("AI text paused") ? why : `AI scout unavailable (${why})`}; using the templated scout`, failed: true });
       return run(scriptedAgentModel(plan, question));
     })
     .finally(() => events.close());

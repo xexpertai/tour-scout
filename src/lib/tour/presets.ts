@@ -17,11 +17,17 @@ export type Preset = {
   stressTest?: boolean;
 };
 
+/**
+ * Order is the landing's poster order. The lead is emerging-act mode: a fictional first-tour act
+ * planned from the fans of a real, small artist it sounds like (the video's "Maya").
+ */
 export const PRESETS: Preset[] = [
-  { slug: "us-indie-band", artist: "Big Thief", kind: "artist", region: "United States", stops: 5, capacity: [300, 900], bill: ["Burlington", "Albany", "Northampton", "Boston", "Portland ME"], flyer: { headline: "Big Thief", sub: "Indie band · 5 US stops" } },
-  { slug: "us-comedian", artist: "Mark Normand", kind: "person", region: "United States", stops: 4, bill: ["Denver", "Austin", "Providence", "Burlington"], flyer: { headline: "Mark Normand", sub: "Stand-up · 4 US stops" } },
-  { slug: "uk-emerging", artist: "Night Swim", kind: "artist", soundsLike: ["Mitski", "Men I Trust"], region: "United Kingdom", stops: 3, capacity: [80, 250], bill: ["London", "Oxford", "Manchester"], flyer: { headline: "Night Swim", sub: "Emerging act · sounds like Mitski, Men I Trust" } },
+  { slug: "us-emerging", artist: "Maya", kind: "artist", soundsLike: ["Joanna Sternberg"], region: "United States", stops: 5, capacity: [100, 300], bill: ["Boston", "Burlington", "Albany", "New York", "Philadelphia"], flyer: { headline: "Maya", sub: "Fictional first-tour act · sounds like Joanna Sternberg" } },
+  { slug: "us-comedian", artist: "Joe List", kind: "person", region: "United States", stops: 5, capacity: [150, 400], bill: ["Washington, DC", "Philadelphia", "New York", "Providence", "Boston"], flyer: { headline: "Joe List", sub: "Stand-up · comedy clubs" } },
+  { slug: "us-americana", artist: "S.G. Goodman", kind: "artist", region: "United States", stops: 5, capacity: [200, 500], bill: ["Asheville", "Nashville", "Louisville", "Cincinnati", "Indianapolis"], flyer: { headline: "S.G. Goodman", sub: "Americana · club run" } },
 ];
+/** The preset the landing preview, the docs excerpt and the video use. */
+export const LEAD_PRESET = "us-emerging";
 
 /** A captured run: the event stream with arrival offsets, replayed by the UI. */
 export type CapturedRun = {
@@ -35,6 +41,12 @@ export type CapturedRun = {
 };
 
 const firstStop = (plan: Pick<TourPlan, "stops">) => [...plan.stops].sort((a, b) => a.order - b.order)[0]?.city.name.replace(/\s*\(sample\)$/, "");
-/** The suggestion recorded for each preset; the UI offers the same text as its first suggestion. */
-export const presetScoutQuestion = (plan: Pick<TourPlan, "stops" | "artist">) =>
-  plan.artist.arenaScale || !firstStop(plan) ? "Swap the weakest stop for a stronger city" : `Who's a good opener in ${firstStop(plan)} with crossover fans?`;
+/**
+ * The agent route check: run automatically when a plan is finished (the deterministic plan, then an
+ * agent that uses Qloo tools to test it and propose a revision). Recorded for each preset.
+ */
+export const routeCheckQuestion = (plan: Pick<TourPlan, "artist">) =>
+  `Check this route: is there a stronger city within a day's drive, or a better ${plan.artist.proxyOf?.length ? "support act" : "opener"}?`;
+export const isRouteCheck = (q?: string) => Boolean(q?.startsWith("Check this route:"));
+/** The question recorded for each preset (the route check); kept for older callers. */
+export const presetScoutQuestion = (plan: Pick<TourPlan, "stops" | "artist">) => (firstStop(plan) ? routeCheckQuestion(plan) : "Swap the weakest stop for a stronger city");

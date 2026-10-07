@@ -10,7 +10,7 @@ for ln in story["lines"]:
     script=ln["text"].split()
     m=[]
     for w in ws:  # whisper splits hyphenated words ("five -city"): merge them back
-        if m and w[0].startswith("-"): m[-1]=(m[-1][0]+w[0], m[-1][1], w[2])
+        if m and (w[0].startswith("-") or w[0].startswith(".")): m[-1]=(m[-1][0]+w[0], m[-1][1], w[2])
         else: m.append(w)
     ws=m
     ok=len(ws)==len(script)

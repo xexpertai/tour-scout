@@ -18,6 +18,8 @@ export type TourInput = {
   region?: string;
   /** User-supplied shortlist of cities, ranked with Qloo `rank` instead of discovered. */
   candidateCities?: string[];
+  /** Optional home base or first city: the tour's region is around it and the route starts nearest it. */
+  startFrom?: string;
   stops: number;
   /** User-provided context only: Qloo has no venue capacity data. */
   capacity?: [number, number];
@@ -39,8 +41,12 @@ export type City = {
   droppedRooms?: number;
 };
 export type Cluster = { name: string; lat: number; lng: number; affinity: number; evidence: string };
-export type VenueRef = { entityId: string; name: string; address?: string; area?: string; affinity?: number; lat?: number; lng?: number; evidence: string };
-export type Opener = { entityId: string; name: string; affinity?: number; evidence: string; overlap?: { shared: string[]; evidence: string } };
+export type VenueRef = { entityId: string; name: string; address?: string; area?: string; town?: string; affinity?: number; lat?: number; lng?: number; evidence: string };
+export type Opener = { entityId: string; name: string; affinity?: number; evidence: string; overlap?: { shared: string[]; evidence: string };
+  /** Qloo popularity (0–1) of the opener or support-slot act, and the size cap it was checked against. */
+  popularity?: number; sizeCap?: number;
+  /** True when no candidate with local affinity was as small as the cap: this is the closest match, flagged. */
+  oversize?: boolean };
 
 /** Qloo data for one stop, streamed as soon as its calls finish. */
 export type StopData = {
@@ -64,6 +70,12 @@ export type FanProfile = {
  * `roomFallback` is true when markets were added from room affinity because hotspots were too few.
  */
 export type Coverage = { basis: "hotspots" | "shortlist"; region?: string;
+  /** Where the fan map came from: live, the last good one saved after a timeout, or none (room affinity only). */
+  heatmap?: "live" | "saved" | "missing"; heatmapSavedAt?: string;
+  /** The tour's region: stops within MAX_LEG_KM of each other in route order; hotspot markets left for another run. */
+  /** Anchor markets (New York, London, ...) that are not among the fan map's hotspots. */
+  anchorsAbsent?: string[];
+  regional?: { around?: string; start?: { lat: number; lng: number; name: string }; maxLegKm: number; longestLegKm: number; stops: number; asked: number; elsewhere: string[] };
   /** The country-wide hotspot cells themselves (for the map's fan heat), strongest first. */
   cells?: { lat: number; lng: number; affinity: number }[];
   /** Rooms dropped as unlikely venues or outside the city (e.g. a farm 20 km away), per city. */
@@ -75,7 +87,9 @@ export type TourPlan = {
   id: string;
   createdAt: string;
   mode: { qloo: "live" | "mock" | "cached"; llm: string };
-  artist: { name: string; entityId?: string; type: ArtistKind; popularity?: number; arenaScale: boolean; proxyOf?: string[] };
+  artist: { name: string; entityId?: string; type: ArtistKind; popularity?: number; arenaScale: boolean; proxyOf?: string[];
+    /** Emerging-act mode: the "sounds like" artists' highest popularity, the cap for support-slot ideas. */
+    proxyPopularity?: number };
   /** Qloo entity ids used as the taste signal (the artist, or the proxies in emerging mode). */
   signals: string[];
   inputs: { region?: string; candidateCities?: string[]; stops: number; capacity?: [number, number] };
@@ -121,6 +135,8 @@ export type FollowUp = {
   affinity?: number;
   cluster?: { name: string; affinity: number; evidence: string };
   answer: Insight;
+  /** Code-checked statements added to the agent's answer (labelled TEMPLATE), e.g. a near-tie it must disclose. */
+  checks?: Insight[];
   pins: GhostPin[];
   proposal?: PlanDiff;
   /** Set once applied: the id of the plan the change produced. */

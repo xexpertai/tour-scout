@@ -8,15 +8,17 @@
  * from this session's tool results, removed stops must exist, and every cited Q-id must be real.
  * Nothing changes until the user applies the proposal.
  */
+import { MARKETS, countryOf, distanceKm } from "../markets.ts";
+import { MAX_LEG_KM, ROAD_FACTOR, TIE, bestOrder, legs, swapFits } from "./region.ts";
 import Anthropic from "@anthropic-ai/sdk";
 import { EvidenceLedger } from "../evidence.ts";
 import { areaName } from "../geo.ts";
-import { insightGuard } from "../guard.ts";
+import { insightGuard, type Insight } from "../guard.ts";
 import { CLAUDE_MODEL, LlmError, logUsage, takeDailyBudget } from "../llm.ts";
 import { compareAudiences, fanHeatmap, recommend } from "../qloo.ts";
 import { clean, possessive } from "../text.ts";
 import { discoverCities, placeFor, scoreCities, scoreCity } from "./cities.ts";
-import { COMEDIAN_TAGS, isRelatedAct, makeStepper, venueTagFor, type StepSink } from "./pipeline.ts";
+import { COMEDIAN_TAGS, describedAs, isRelatedAct, unlikelyOpener, makeStepper, venueTagFor, type StepSink, SMALL_ROOM_POPULARITY } from "./pipeline.ts";
 import type { City, FollowUp, GhostPin, Opener, PlanDiff, TourPlan } from "./types.ts";
 
 export const MAX_ROUNDS = 4;
@@ -68,6 +70,10 @@ Use the tools to answer the user's request about their tour plan, then call prop
 - Only propose cities that appeared in a rank_cities or find_cities result, and only remove existing stop_ids. Keep 2–6 stops.
 - City scores are Qloo room affinity on a 0–100 scale for ranking cities against each other. Never present them as attendance, ticket sales, certainty, cause, or a prediction about any individual. Never forecast turnout.
 - Never state or imply income, wealth, class or sensitive traits of fans or places. Never invent venues, places, artists or numbers.
+- Never list raw scores in parentheses like "(97, 96.9, 97)"; if a number helps, write it once as "Qloo affinity 97".
+- If act.sounds_like is set, the act is new: an "opener" is an act it could support (it opens for them). Say "a support slot with X", never that X opens for the act.
+- Refer to the act by name or as "they"; never he, she, his or her.
+- A route check ("Check this route: …"): call rank_cities or find_cities, then read route_check. If a city is vs_weakest "stronger" with swap_keeps_route_drivable true, you must propose swapping it in for weakest_stop (add_cities + remove_stop_ids). If one is "tied", say they are effectively tied. Only say the route holds when no city is stronger and drivable. Openers: only use a find_openers result for that same city; if it had 0 candidates, say so. Propose at most one change.
 - The answer is at most 70 words, cites the evidence ids (Q…) of the tool results it relies on, and says plainly if the data does not support a change.`;
 
 // ---------------------------------------------------------------- Claude
@@ -143,16 +149,21 @@ export function scriptedAgentModel(plan: TourPlan, question: string): AgentModel
         return { calls: [{ id: id(0), name: "rank_cities", input: { cities: found.slice(0, 2).map((c: any) => c.city) } }], text: "" };
       }
       const ranking: any[] = results.find((r) => r.ranking)?.ranking ?? [];
-      const best = ranking.find((c) => !c.on_route);
+      // The same test the server applies: only a stronger city whose swap keeps every leg drivable.
+      const drivable = new Set(results.flatMap((r) => r.route_check ?? []).filter((t: any) => t.swap_keeps_route_drivable).map((t: any) => clean(t.city).toLowerCase()));
+      const best = ranking.find((c) => !c.on_route && drivable.has(clean(c.city).toLowerCase()));
       const rankEvidence: string | undefined = best?.evidence_id ?? results.find((r) => r.ranking)?.evidence_id;
       const weakScore = ranking.find((c) => clean(c.city).toLowerCase() === clean(weakest.city.name).toLowerCase())?.score;
-      const opener = results.find((r) => r.openers)?.openers?.[0];
+      // Never the opener the stop already has, one used at another stop, or one bigger than the act.
+      const target = named ?? plan.stops[0];
+      const opener = results.find((r) => r.openers)?.openers?.find((o: any) => o.entity_id !== target.opener?.entityId
+        && !plan.stops.some((x) => x.opener?.entityId === o.entity_id) && o.fits_the_act !== false);
       const openerEvidence: string | undefined = results.find((r) => r.openers)?.evidence_id;
       const swap = best && weakScore !== undefined && best.score > weakScore;
       const parts = [
         swap ? `${best.city} scores ${best.score} out of 100, above ${clean(weakest.city.name)} (${weakScore}), so swapping it in strengthens the route.`
-          : best ? `${best.city} scores ${best.score}, which does not beat your current stops, so the route stays as is.` : "No stronger city came up in this region.",
-        opener ? `For ${clean((named ?? plan.stops[0]).city.name)}, ${clean(opener.name)} is a possible opener (artist affinity ${opener.artist_affinity_with_these_fans}).` : "",
+          : best ? `${best.city} scores ${best.score}, which does not beat your current stops, so the route stays as is.` : "No stronger city within a day's drive came up in this region.",
+        opener ? `For ${clean((named ?? plan.stops[0]).city.name)}, ${plan.artist.proxyOf?.length ? `a support slot with ${clean(opener.name)} is worth asking for` : `${clean(opener.name)} is a possible opener`} (artist affinity ${opener.artist_affinity_with_these_fans}).` : "",
       ].filter(Boolean);
       return {
         calls: [{ id: id(0), name: "propose_change", input: {
@@ -173,7 +184,13 @@ export function scriptedAgentModel(plan: TourPlan, question: string): AgentModel
 export function cleanAnswer(raw: string): string {
   return raw
     .replace(/<\/?(?:parameter|invoke|antml:[a-z_]+)[^>]*>/gi, "")
+    // Tool-result field names the model sometimes echoes ("(fits_the_act: true)").
+    .replace(/\s*\(\s*[a-z]+(?:_[a-z]+)+\s*:[^)]*\)/g, "")
+    // Raw score lists ("(97, 96.9, 97)") read as noise; the scores are in the receipts.
+    .replace(/\s*\((?:\s*\d+(?:\.\d+)?\s*,)+\s*\d+(?:\.\d+)?\s*\)/g, "")
     .replace(/["'”]?\s*,?\s*\[\s*"?Q\d+"?(?:\s*,\s*"?Q\d+"?)*\s*\]\s*$/, "")
+    // Inline evidence ids ("(Q37, Q34)"): they belong in the evidence field, shown as chips.
+    .replace(/\s*\(\s*Q\d+(?:\s*,\s*Q\d+)*\s*\)/g, "")
     .replace(/["'\s,]+$/, "")
     .replace(/^["'\s]+/, "")
     .trim();
@@ -191,6 +208,56 @@ function planBrief(plan: TourPlan, question: string): string {
     region: plan.inputs.region ?? null,
     stops: plan.stops.map((s) => ({ stop_id: s.stopId, order: s.order, city: clean(s.city.name), room_affinity: score(s.city.affinity), fan_hotspot: Boolean(s.city.hotspot), opener: s.opener ? clean(s.opener.name) : null })),
   });
+}
+
+/** Straight-line km as road km, rounded to 10 (the unit every distance on screen uses). */
+const roadKm = (km: number) => Math.round((km * ROAD_FACTOR) / 10) * 10;
+const located = (cs: { lat?: number; lng?: number }[]) => cs.filter((c) => c.lat !== undefined && c.lng !== undefined).map((c) => ({ lat: c.lat!, lng: c.lng! }));
+const routeKm = (pts: { lat: number; lng: number }[]) => (pts.length > 1 ? legs(pts, bestOrder(pts)).reduce((a, b) => a + b, 0) : 0);
+
+/** "+ Charlotte (92.0)", "− Indianapolis (89.0)": scores with one decimal, as everywhere else. */
+export const diffSummary = (plan: TourPlan, add: City[], remove: string[]) => [
+  ...add.map((c) => `+ ${clean(c.name)} (${score(c.affinity)!.toFixed(1)})`),
+  ...remove.map((id) => plan.stops.find((s) => s.stopId === id)!).filter(Boolean).map((s) => `− ${clean(s.city.name)} (${score(s.city.affinity)!.toFixed(1)})`),
+];
+
+/**
+ * The route check's verdict in code-written words (TEMPLATE), built from the final proposal and the
+ * cities the check scored: what changes and why, or why the route holds, with the numbers.
+ */
+export function routeVerdict(plan: TourPlan, seen: City[], diff?: Pick<PlanDiff, "add" | "remove">): Insight {
+  const stops = plan.stops.filter((s) => s.city.lat !== undefined && s.city.lng !== undefined);
+  const weakest = [...stops].sort((a, b) => a.city.affinity - b.city.affinity)[0] ?? plan.stops[0];
+  const s1 = (n: number) => score(n)!.toFixed(1);
+  const removed = (diff?.remove ?? []).map((id) => plan.stops.find((x) => x.stopId === id)!).filter(Boolean);
+  if (diff && (diff.add.length || removed.length)) {
+    const before = routeKm(located(plan.stops.map((x) => x.city)));
+    const after = routeKm(located([...plan.stops.filter((x) => !diff.remove.includes(x.stopId)).map((x) => x.city), ...diff.add]));
+    const delta = roadKm(after - before);
+    const driving = Math.abs(delta) < 10 ? "about the same driving" : `≈ ${Math.abs(delta).toLocaleString("en")} km ${delta > 0 ? "more" : "less"} driving by road`;
+    const ev = [...diff.add.map((c) => c.evidence), ...removed.map((x) => x.city.evidence)];
+    if (diff.add.length && removed.length) {
+      const a = diff.add[0], r = removed[0];
+      return { text: `Route check: ${clean(a.name)} scores ${s1(a.affinity)}, above ${clean(r.city.name)} (${s1(r.city.affinity)})${r.stopId === weakest.stopId ? ", the weakest stop" : ""}, and the changed route keeps every leg within a day's drive (${driving}). Proposed: swap it in.`, evidence: ev, kind: "template" };
+    }
+    if (diff.add.length) return { text: `Route check: adding ${diff.add.map((c) => `${clean(c.name)} (${s1(c.affinity)})`).join(" and ")} keeps every leg within a day's drive (${driving}).`, evidence: ev, kind: "template" };
+    return { text: `Proposed: drop ${removed.map((x) => `${clean(x.city.name)} (${s1(x.city.affinity)})`).join(" and ")}, the lowest room affinity on the route (${driving}).`, evidence: ev, kind: "template" };
+  }
+  // No city change: say which stop is weakest and what the nearby cities scored.
+  const pts = located(stops.map((x) => x.city));
+  const others = seen.filter((c) => c.lat !== undefined && c.lng !== undefined && !plan.stops.some((x) => sameCity(x.city.name, c.name)));
+  const wIndex = stops.indexOf(weakest);
+  const far = others.filter((c) => c.affinity - weakest.city.affinity > TIE && !swapFits(pts, wIndex, { lat: c.lat!, lng: c.lng! }).fits).sort((a, b) => b.affinity - a.affinity)[0];
+  const tied = others.filter((c) => Math.abs(c.affinity - weakest.city.affinity) <= TIE).sort((a, b) => b.affinity - a.affinity)[0];
+  const lower = others.filter((c) => weakest.city.affinity - c.affinity > TIE).sort((a, b) => b.affinity - a.affinity).slice(0, 2);
+  const nearestKm = (c: City) => roadKm(Math.min(...pts.map((p) => distanceKm(p, { lat: c.lat!, lng: c.lng! }))));
+  const parts = [
+    `Route holds: ${clean(weakest.city.name)} (${s1(weakest.city.affinity)}) is the weakest stop, and no stronger city the check scored is within a day's drive.`,
+    lower.length ? `${lower.map((c) => `${clean(c.name)} (${s1(c.affinity)})`).join(" and ")} ${lower.length === 1 ? "scores" : "score"} lower.` : "",
+    tied ? `${clean(tied.name)} (${s1(tied.affinity)}) is effectively tied with it.` : "",
+    far ? `${clean(far.name)} (${s1(far.affinity)}) scores higher but is about ${nearestKm(far).toLocaleString("en")} km by road from the nearest stop.` : "",
+  ].filter(Boolean);
+  return { text: parts.join(" "), evidence: [weakest.city.evidence, ...[...lower, tied, far].filter((c): c is City => Boolean(c)).map((c) => c.evidence)], kind: "template" };
 }
 
 const CHECKING: Record<string, (i: Record<string, any>) => string> = {
@@ -212,6 +279,23 @@ export async function runScout(plan: TourPlan, question: string, model: AgentMod
   // What this session has seen; proposals may only use these.
   const seenCities = new Map<string, City>();
   const seenOpeners = new Map<string, Opener>();
+  const openerPopularity = new Map<string, number | undefined>();
+  /** The cities whose find_openers results contained each candidate: an opener is evidence for those cities only. */
+  const openerCities = new Map<string, string[]>();
+  const weakestStop = () => {
+    const located = plan.stops.filter((s) => s.city.lat !== undefined && s.city.lng !== undefined);
+    const stop = [...located].sort((a, b) => a.city.affinity - b.city.affinity)[0];
+    return stop ? { stop, index: located.indexOf(stop), points: located.map((s) => ({ lat: s.city.lat!, lng: s.city.lng! })) } : undefined;
+  };
+  /** How a city compares with the weakest stop, with the route geometry (the agent must use these facts). */
+  const routeTest = (c: City) => {
+    const w = weakestStop();
+    if (!w || c.lat === undefined || c.lng === undefined || stopCities.some((s) => sameCity(s, c.name))) return undefined;
+    const diff = c.affinity - w.stop.city.affinity;
+    const fit = swapFits(w.points, w.index, { lat: c.lat, lng: c.lng });
+    return { city: clean(c.name), score: score(c.affinity), vs_weakest: diff > TIE ? "stronger" : diff >= -TIE ? "tied" : "weaker",
+      swap_keeps_route_drivable: fit.fits, extra_drive_km_by_road: roadKm(fit.extraKm), evidence_id: c.evidence };
+  };
   const pins: GhostPin[] = [];
   const remember = (cities: City[]) => {
     for (const c of cities) {
@@ -225,7 +309,7 @@ export async function runScout(plan: TourPlan, question: string, model: AgentMod
   let venueTag: string | undefined | null = null;
   const cityCtx = async () => {
     if (venueTag === null) venueTag = await venueTagFor(plan.artist.type, step);
-    return { signals: plan.signals, who, venueTag };
+    return { signals: plan.signals, who, venueTag, comedy: plan.artist.type === "person" };
   };
 
   async function execute(call: ToolCall): Promise<unknown> {
@@ -239,7 +323,10 @@ export async function runScout(plan: TourPlan, question: string, model: AgentMod
         const { cities, unscored } = await scoreCities(places, await cityCtx(), step);
         remember(cities);
         const all = [...cities.map((c) => ({ c, on_route: false })), ...plan.stops.map((s) => ({ c: s.city, on_route: true }))].sort((a, b) => b.c.affinity - a.c.affinity);
+        const weak = weakestStop();
         return {
+          weakest_stop: weak ? { stop_id: weak.stop.stopId, city: clean(weak.stop.city.name), score: score(weak.stop.city.affinity) } : undefined,
+          route_check: cities.map((c) => routeTest(c)).filter(Boolean),
           evidence_id: cities[0]?.evidence,
           evidence_ids: [...new Set(cities.map((c) => c.evidence))],
           ranking: all.map((x, k) => ({ rank: k + 1, city: clean(x.c.name), score: score(x.c.affinity), evidence_id: x.c.evidence, on_route: x.on_route, fan_hotspot: Boolean(x.c.hotspot) })),
@@ -255,6 +342,7 @@ export async function runScout(plan: TourPlan, question: string, model: AgentMod
         remember(cities);
         return {
           hotspot_evidence_id: coverage.evidence,
+          route_check: cities.filter((c) => !stopCities.some((s) => sameCity(s, c.name))).map((c) => routeTest(c)).filter(Boolean),
           cities: cities.map((c) => ({ city: clean(c.name), score: score(c.affinity), evidence_id: c.evidence, fan_hotspot: Boolean(c.hotspot), on_route: stopCities.some((s) => sameCity(s, c.name)) })),
           remote_hotspots_skipped: coverage.remoteCells,
         };
@@ -278,12 +366,18 @@ export async function runScout(plan: TourPlan, question: string, model: AgentMod
           () => recommend({ targetType: plan.artist.type, signals: plan.signals, signalLocation: city, limit: 8, ...(plan.artist.type === "person" ? { includeTags: COMEDIAN_TAGS, includeTagsOperator: "union" as const } : {}) }), `Similar acts with affinity in ${city}`);
         if (!r) return { error: `No opener candidates in ${city}.` };
         // Same rule as the pipeline: not the act, not a member of it, and (for a known act) not more popular.
-        const others = r.entities.filter((e) => !plan.signals.includes(e.id) && !isRelatedAct(e.description, plan.artist.proxyOf?.length ? plan.artist.proxyOf : [plan.artist.name]));
-        const cap = plan.artist.proxyOf?.length ? undefined : plan.artist.popularity;
-        const fits = others.filter((e) => cap === undefined || (e.popularity ?? 0) <= cap);
-        const openers = fits.length ? fits : others;
-        for (const e of openers) seenOpeners.set(e.id, { entityId: e.id, name: e.name, affinity: e.affinity, evidence: r.source.id });
-        return { evidence_id: r.source.id, city, openers: openers.map((e) => ({ entity_id: e.id, name: clean(e.name), artist_affinity_with_these_fans: score(e.affinity) })), note: "artist_affinity is how strongly these fans like that act, not a room score" };
+        const others = r.entities.filter((e) => !plan.signals.includes(e.id) && !isRelatedAct(e.description, plan.artist.proxyOf?.length ? plan.artist.proxyOf : [plan.artist.name]) && !unlikelyOpener(e.description, plan.artist.type === "person"));
+        const cap = plan.artist.popularity ?? (plan.artist.proxyOf?.length ? SMALL_ROOM_POPULARITY : undefined);
+        const fitsAct = (e: { popularity?: number }) => cap === undefined || (e.popularity !== undefined && e.popularity <= cap);
+        const openers = [...others.filter(fitsAct), ...others.filter((e) => !fitsAct(e)).sort((a, b) => (a.popularity ?? 1) - (b.popularity ?? 1))];
+        if (!openers.length) return { evidence_id: r.source.id, city, openers: [], note: `0 opener candidates in ${city}: say so; never use another city's results for this stop.` };
+        for (const e of openers) {
+          if (!seenOpeners.has(e.id)) seenOpeners.set(e.id, { entityId: e.id, name: e.name, affinity: e.affinity, evidence: r.source.id, popularity: e.popularity, sizeCap: cap, oversize: !fitsAct(e) || undefined });
+          openerPopularity.set(e.id, e.popularity);
+          openerCities.set(e.id, [...(openerCities.get(e.id) ?? []), city]);
+        }
+        return { evidence_id: r.source.id, city, openers: openers.map((e) => ({ entity_id: e.id, name: clean(e.name), artist_affinity_with_these_fans: score(e.affinity), fits_the_act: cap === undefined || (e.popularity !== undefined && e.popularity <= cap) })),
+          note: "artist_affinity is how strongly these fans like that act, not a room score. Only suggest acts with fits_the_act: true (not bigger than the act)." };
       }
       case "audience_overlap": {
         const opener = seenOpeners.get(String(i.entity_id));
@@ -300,6 +394,23 @@ export async function runScout(plan: TourPlan, question: string, model: AgentMod
 
   const system = SCOUT_RULES;
   const history: AgentMessage[] = [{ role: "user", text: `Plan and request (JSON): ${planBrief(plan, question)}` }];
+  // A route check always starts from the same deterministic step: the server scores the touring cities
+  // near the route (within a day's drive of a stop) so the agent, and the server's own check, compare the
+  // weakest stop against them, whatever the model chooses to look at next.
+  if (/^Check this route:/.test(question)) {
+    const country = countryOf(plan.inputs.region ?? "United States");
+    const located = plan.stops.filter((x) => x.city.lat !== undefined && x.city.lng !== undefined);
+    const nearby = MARKETS.filter((m) => (!country || m.country === country) && !stopCities.some((c) => sameCity(c, m.name))
+      && located.some((x) => distanceKm({ lat: x.city.lat!, lng: x.city.lng! }, m) <= MAX_LEG_KM * 0.6))
+      .sort((a, b) => Math.min(...located.map((x) => distanceKm({ lat: x.city.lat!, lng: x.city.lng! }, a))) - Math.min(...located.map((x) => distanceKm({ lat: x.city.lat!, lng: x.city.lng! }, b))))
+      .slice(0, 6).map((m) => m.name);
+    if (nearby.length) {
+      out.push({ type: "checking", label: `Scout is ranking the cities near your route: ${nearby.join(", ")}…` });
+      const pre = await execute({ id: "route-check-0", name: "rank_cities", input: { cities: nearby } });
+      const first = history[0] as { role: "user"; text: string };
+      first.text += `\n\nServer pre-check: the touring cities near the route, ranked with your stops (a rank_cities result you may cite): ${JSON.stringify(pre)}`;
+    }
+  }
   let final: Record<string, any> | undefined;
   let fallbackText = "";
   for (let round = 0; round <= MAX_ROUNDS && !final; round++) {
@@ -323,36 +434,99 @@ export async function runScout(plan: TourPlan, question: string, model: AgentMod
 
   // Validate the proposal against what the session actually saw.
   const validIds = new Set([...plan.sources, ...(plan.followUps ?? []).flatMap((f) => f.sources), ...ledger.sources].map((s) => s.id));
-  const { guard } = insightGuard(validIds, model.name === "scripted", { capacity: plan.inputs.capacity });
+  const { guard, withheld } = insightGuard(validIds, model.name === "scripted", {
+    capacity: plan.inputs.capacity, actName: plan.artist.name, emerging: Boolean(plan.artist.proxyOf?.length),
+    hotspotCities: plan.stops.filter((s) => s.city.hotspot).map((s) => clean(s.city.name)),
+  });
   // Accept the answer as a string (schema) or an object (older shape); strip stray tool markup the
   // model sometimes leaks; if no evidence list came back, use Q-ids the text itself cites.
   const rawAnswer = typeof final?.answer === "string" ? final.answer : typeof final?.answer?.text === "string" ? final.answer.text : fallbackText;
   const answerText = cleanAnswer(rawAnswer);
   const listed = Array.isArray(final?.evidence) ? final!.evidence : Array.isArray(final?.answer?.evidence) ? final!.answer.evidence : [];
-  const evidence = listed.length ? listed : [...answerText.matchAll(/\bQ\d+\b/g)].map((m) => m[0]);
-  const answer = guard("answer", answerText ? { text: answerText, evidence } : undefined)
-    ?? { text: "The scout could not support an answer with the data it found.", evidence: [], kind: "template" as const };
-  const add = (Array.isArray(final?.add_cities) ? final!.add_cities : [])
+  const evidence = listed.length ? listed : [...rawAnswer.matchAll(/\bQ\d+\b/g)].map((m) => m[0]);
+  const modelAnswer = guard("answer", answerText ? { text: answerText, evidence } : undefined);
+  if (withheld.length) console.warn(JSON.stringify({ event: "scout_withheld", reasons: withheld.map((w) => w.reason) }));
+  const requestedAdds = Array.isArray(final?.add_cities) ? final!.add_cities.length : 0;
+  const seenAdds: City[] = (Array.isArray(final?.add_cities) ? final!.add_cities : [])
     .map((name: unknown) => seenCities.get(clean(String(name)).toLowerCase()))
     .filter((c: City | undefined): c is City => Boolean(c) && !stopCities.some((s) => sameCity(s, c!.name)))
     .slice(0, 3);
-  const remove = (Array.isArray(final?.remove_stop_ids) ? final!.remove_stop_ids : []).map(String).filter((id: string) => plan.stops.some((s) => s.stopId === id));
-  // An opener can only be set on a stop that stays in the plan.
+  // Keep the tour drivable: an added city must be within a day's drive of a stop that stays.
+  let add: City[] = seenAdds.filter((c: City) => c.lat === undefined || plan.stops.some((s) => s.city.lat !== undefined && distanceKm({ lat: s.city.lat, lng: s.city.lng! }, { lat: c.lat!, lng: c.lng! }) <= MAX_LEG_KM * 1.25));
+  let remove: string[] = (Array.isArray(final?.remove_stop_ids) ? final!.remove_stop_ids : []).map(String).filter((id: string) => plan.stops.some((s) => s.stopId === id));
+  // A swap is one change: if a city it adds is too far to drive, the stop it would replace stays too.
+  if (add.length < seenAdds.length) { add = []; remove = []; }
+  // The changed route as a whole must stay drivable (no leg over the limit in its best order).
+  if (add.length) {
+    const next = [...plan.stops.filter((x) => !remove.includes(x.stopId)).map((x) => x.city), ...add].filter((c) => c.lat !== undefined && c.lng !== undefined).map((c) => ({ lat: c.lat!, lng: c.lng! }));
+    const now = plan.stops.filter((x) => x.city.lat !== undefined && x.city.lng !== undefined).map((x) => ({ lat: x.city.lat!, lng: x.city.lng! }));
+    const limit = Math.max(MAX_LEG_KM, now.length > 1 ? Math.max(...legs(now, bestOrder(now))) : 0);
+    if (next.length > 1 && Math.max(...legs(next, bestOrder(next))) > limit + 1) { add = []; remove = []; }
+  }
+
+  // ---- the agent must obey its own numbers: a stronger city that keeps the route drivable replaces the
+  // weakest stop. If the agent said otherwise, the server makes the swap and says why (TEMPLATE).
+  const checks: Insight[] = [];
+  let overridden = false;
+  const w = weakestStop();
+  const tested = [...seenCities.values()].map((c) => ({ c, t: routeTest(c) })).filter((x): x is { c: City; t: NonNullable<ReturnType<typeof routeTest>> } => Boolean(x.t));
+  const better = tested.filter((x) => x.t.vs_weakest === "stronger" && x.t.swap_keeps_route_drivable).sort((a, b) => b.c.affinity - a.c.affinity)[0];
+  if (w && better && !add.length && !remove.length) {
+    add = [better.c];
+    remove = [w.stop.stopId];
+    overridden = true;
+  }
+  // A tie with the weakest stop is worth a note, unless the proposal removes that stop anyway.
+  const tie = tested.find((x) => x.t.vs_weakest === "tied" && x.t.swap_keeps_route_drivable && !add.some((a) => sameCity(a.name, x.c.name)));
+  if (w && tie && !remove.includes(w.stop.stopId) && !/\btie|tied|about (the )?same|about equal|effectively equal/i.test(String(final?.answer ?? ""))) {
+    checks.push({ text: `${clean(tie.c.name)} (${score(tie.c.affinity)}) and ${clean(w.stop.city.name)} (${score(w.stop.city.affinity)}) are effectively tied; either works for the route.`, evidence: [tie.c.evidence, w.stop.city.evidence], kind: "template" });
+  }
+
+  // ---- openers: evidence from that stop's own city search, not already on the plan, sized to the act.
   const openerStop = final?.set_opener ? String(final.set_opener.stop_id) : undefined;
-  const openerPick = openerStop && plan.stops.some((s) => s.stopId === openerStop) && !remove.includes(openerStop) ? seenOpeners.get(String(final!.set_opener.entity_id)) : undefined;
+  const capPop = plan.artist.popularity ?? (plan.artist.proxyOf?.length ? SMALL_ROOM_POPULARITY : undefined);
+  const fits = (id: string) => capPop === undefined || ((openerPopularity.get(id) ?? 1) <= capPop);
+  const pickedId = final?.set_opener ? String(final.set_opener.entity_id) : "";
+  const target = openerStop ? plan.stops.find((x) => x.stopId === openerStop) : undefined;
+  const current = target?.opener;
+  const curPop = current ? (openerPopularity.get(current.entityId) ?? current.popularity) : undefined;
+  const pickPop = openerPopularity.get(pickedId);
+  const localFits = target ? [...openerCities.entries()].filter(([id, cs]) => cs.some((c) => sameCity(c, target.city.name)) && fits(id)) : [];
+  // When nothing local fits the size cap, a change may only move to a smaller act than the current one.
+  const tooBig = Boolean(pickedId) && !fits(pickedId) && (localFits.length > 0 || curPop === undefined || (pickPop ?? 1) >= curPop);
+  const local = Boolean(target) && (openerCities.get(pickedId) ?? []).some((c) => sameCity(c, target!.city.name));
+  const noOp = current?.entityId === pickedId;
+  const duplicate = plan.stops.some((x) => x.stopId !== openerStop && x.opener?.entityId === pickedId);
+  let openerPick = target && local && !tooBig && !noOp && !duplicate && !remove.includes(openerStop!) ? seenOpeners.get(pickedId) : undefined;
+  // The same realism rule as the plan: no supergroup, and no actor-first person for a comedian.
+  if (openerPick && unlikelyOpener(await describedAs({ id: openerPick.entityId, name: openerPick.name }, plan.artist.type, step), plan.artist.type === "person")) openerPick = undefined;
   const resulting = plan.stops.length - remove.length + add.length;
   const valid = (add.length || remove.length || openerPick) && resulting >= 2 && resulting <= 6;
-  const scoreOf = (id: string) => score(plan.stops.find((s) => s.stopId === id)!.city.affinity);
+  const role = plan.artist.proxyOf?.length ? "support slot with" : plan.artist.type === "person" ? "feature act" : "opener";
   const proposal: PlanDiff | undefined = valid ? {
     add,
     remove,
     opener: openerPick ? { stopId: final!.set_opener.stop_id, opener: openerPick } : undefined,
     summary: [
-      ...add.map((c: City) => `+ ${clean(c.name)} (${score(c.affinity)})`),
-      ...remove.map((id: string) => `− ${clean(plan.stops.find((s) => s.stopId === id)!.city.name)} (${scoreOf(id)})`),
-      ...(openerPick ? [`opener → ${clean(openerPick.name)}`] : []),
+      ...diffSummary(plan, add, remove),
+      ...(openerPick ? [`${role} → ${clean(openerPick.name)}`] : []),
     ].join(" · "),
   } : undefined;
+  if (overridden) console.warn(JSON.stringify({ event: "route_check_override", add: add.map((c) => c.name), remove }));
 
-  return { kind: "agent", question, answer, pins, proposal, sources: ledger.sources, askedAt: new Date().toISOString(), by: model.name };
+  // The answer must describe the final proposal. A model answer that contradicts the server's route
+  // check is replaced; a withheld model answer, and every scripted (no-AI) answer about the route, is
+  // code-written from the final proposal and the cities the check saw (TEMPLATE), with its numbers.
+  const o = proposal?.opener?.opener;
+  const where = proposal?.opener ? clean(plan.stops.find((x) => x.stopId === proposal.opener!.stopId)!.city.name) : "";
+  const openerLine = o ? `For ${where}: ${plan.artist.proxyOf?.length ? `a support slot with ${clean(o.name)}` : `${clean(o.name)} as ${role}`}${fits(o.entityId) && capPop !== undefined ? ", an act within the size fit," : ""} whose fans share tastes with this audience${o.overlap?.shared.length ? ` (${o.overlap.shared.slice(0, 4).join(", ")})` : ""}.` : "";
+  const routeQuestion = /^Check this route:/.test(question);
+  const cityChange = Boolean(proposal && (proposal.add.length || proposal.remove.length));
+  const scriptedFewer = model.name === "scripted" && !requestedAdds && cityChange && !overridden;
+  const verdict = (cityChange || routeQuestion) && !scriptedFewer ? routeVerdict(plan, [...seenCities.values()], proposal) : undefined;
+  const useModel = !overridden && modelAnswer && (model.name !== "scripted" || scriptedFewer || (!verdict && !requestedAdds));
+  const answer: Insight = useModel ? modelAnswer! : verdict ? { ...verdict, text: [verdict.text, openerLine].filter(Boolean).join(" "), evidence: [...new Set([...verdict.evidence, o?.evidence, o?.overlap?.evidence].filter((x): x is string => Boolean(x)))] }
+    : o ? { text: `Suggested change: ${openerLine}`, evidence: [o.evidence, o.overlap?.evidence].filter((x): x is string => Boolean(x)), kind: "template" }
+    : { text: "The scout could not support an answer with the data it found.", evidence: [], kind: "template" };
+  return { kind: "agent", question, answer, checks: checks.length ? checks : undefined, pins, proposal, sources: ledger.sources, askedAt: new Date().toISOString(), by: model.name };
 }

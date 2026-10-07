@@ -20,12 +20,16 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import geohash from "ngeohash";
 import { mock } from "./qloo-mock.ts";
+import { tidyTag } from "./text.ts";
 
 export const QLOO_BASE_URL = process.env.QLOO_BASE_URL?.trim() || "https://hackathon.api.qloo.com";
 const QLOO_BIN = process.env.QLOO_BIN?.trim() || "qloo";
 const TIMEOUT_MS = 45_000;
+/** The fan map is the slowest call and the one a run waits on; past this it falls back (see fanHeatmap). */
+const HEATMAP_TIMEOUT_MS = Number(process.env.QLOO_HEATMAP_TIMEOUT_MS) || 20_000;
 // 3 parallel harness processes: at 4 the event key hit 429s during back-to-back tours (M0).
 const MAX_CONCURRENT = Math.max(1, Number(process.env.QLOO_CONCURRENCY) || 3);
 /** After the harness's own 429 retries (3 attempts, Retry-After up to 30 s), wait this long and retry once. */
@@ -93,6 +97,17 @@ export async function qlooMode(): Promise<{ mock: boolean; reason: string }> {
 }
 const isMock = async () => (await qlooMode()).mock;
 
+export const LIVE_UNAVAILABLE = "Live Qloo data isn't available on this server right now. The demo tours still work.";
+/**
+ * Sample data is for local development without a key. A production server without a working key
+ * refuses live runs with a clear message (the demo tours and share links need no Qloo call), unless
+ * QLOO_ALLOW_SAMPLE=1.
+ */
+export async function liveUnavailable(): Promise<string | undefined> {
+  if (process.env.NODE_ENV !== "production" || process.env.QLOO_ALLOW_SAMPLE === "1") return undefined;
+  return (await qlooMode()).mock ? LIVE_UNAVAILABLE : undefined;
+}
+
 // ---------------------------------------------------------------- process runner
 let active = 0;
 const waiting: (() => void)[] = [];
@@ -107,7 +122,7 @@ async function withSlot<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-function run(args: string[], stdin?: string): Promise<string> {
+function run(args: string[], stdin?: string, timeoutMs = TIMEOUT_MS): Promise<string> {
   return withSlot(() => new Promise((resolve, reject) => {
     // The binary path is runtime config; the ignore comment stops the bundler tracing the whole project.
     const child = spawn(/*turbopackIgnore: true*/ QLOO_BIN, args, {
@@ -116,7 +131,7 @@ function run(args: string[], stdin?: string): Promise<string> {
       stdio: ["pipe", "pipe", "pipe"],
     });
     let out = "", err = "";
-    const timer = setTimeout(() => { child.kill("SIGTERM"); reject(new QlooError("Qloo request timed out", "QLOO_TIMEOUT", true)); }, TIMEOUT_MS);
+    const timer = setTimeout(() => { child.kill("SIGTERM"); reject(new QlooError(`Qloo didn't answer within ${Math.round(timeoutMs / 1000)} s`, "QLOO_TIMEOUT", true)); }, timeoutMs);
     child.stdout.on("data", (d) => (out += d));
     child.stderr.on("data", (d) => (err += d));
     child.on("error", (e: NodeJS.ErrnoException) => {
@@ -190,16 +205,17 @@ async function cached<T>(key: string, fn: () => Promise<T>): Promise<{ value: T;
 }
 
 /** Runs one validated workflow through `qloo exec`; returns the harness envelope and timing. */
-async function execWorkflow(operation: string, input: Record<string, unknown>) {
+async function execWorkflow(operation: string, input: Record<string, unknown>, timeoutMs?: number) {
   return cached(`exec:${operation}:${JSON.stringify(input)}`, async () => {
-    let envelope = JSON.parse(await run(["exec", operation], JSON.stringify(input)));
+    let envelope = JSON.parse(await run(["exec", operation], JSON.stringify(input), timeoutMs));
     // The harness's recovery advice for a rate limit is to wait for the window and retry once.
     if (envelope.error?.code === "QLOO_RATE_LIMIT" && RATE_LIMIT_RETRY_MS > 0) {
       await new Promise((r) => setTimeout(r, RATE_LIMIT_RETRY_MS * (0.75 + Math.random() / 2)));
-      envelope = JSON.parse(await run(["exec", operation], JSON.stringify(input)));
+      envelope = JSON.parse(await run(["exec", operation], JSON.stringify(input), timeoutMs));
     }
     if (envelope.error && !envelope.status) {
       const { code = "QLOO_ERROR", retryable = false, recovery } = envelope.error;
+      if (code === "QLOO_AUTH") throw new QlooError(LIVE_UNAVAILABLE, code, false, recovery);
       throw new QlooError(`Qloo ${operation} failed (${code})`, code, retryable, recovery);
     }
     if (envelope.status === "error") {
@@ -300,7 +316,7 @@ export async function entityTags(entityIds: string[], limit = 10): Promise<{ tag
   const r = await execWorkflow("entity_tags", { entities: entityIds, limit: 20 });
   const seen = new Set<string>();
   const tags: Tag[] = (r.value.results ?? []).filter((t: any) => t?.id && typeof t.name === "string" && t.name.trim() && isAudienceTag(t))
-    .map((t: any) => ({ id: t.id, name: t.name.trim(), type: t.type, affinity: num(t.affinity) }))
+    .map((t: any) => ({ id: t.id, name: tidyTag(t.name), type: t.type, affinity: num(t.affinity) }))
     // Different tag families can carry the same name ("Smooth" as style and as artist trait).
     .filter((t: Tag) => !seen.has(t.name.toLowerCase()) && Boolean(seen.add(t.name.toLowerCase()))).slice(0, limit);
   return { tags, call: callFrom("entity_tags", r, tags.length) };
@@ -338,9 +354,9 @@ export async function recommend(p: {
 }
 
 /** where_popular: where the audience of one entity is concentrated within a location. */
-export async function wherePopular(entityId: string, within: string, limit = 15): Promise<{ cells: AreaScore[]; call: QlooCall }> {
+export async function wherePopular(entityId: string, within: string, limit = 15, timeoutMs?: number): Promise<{ cells: AreaScore[]; call: QlooCall }> {
   if (await isMock()) return mock.heatmap(`${within}:${entityId}`, "where_popular");
-  const r = await execWorkflow("where_popular", { entity: entityId, within, limit });
+  const r = await execWorkflow("where_popular", { entity: entityId, within, limit }, timeoutMs);
   const cells = (r.value.results ?? []).map(toAreaScore).filter(Boolean) as AreaScore[];
   return { cells, call: callFrom("where_popular", r, cells.length) };
 }
@@ -350,10 +366,50 @@ export async function wherePopular(entityId: string, within: string, limit = 15)
  * several signals (emerging-act proxies, at most 3) run one call each and are merged per map cell,
  * keeping each cell's strongest affinity. The merged call lists every request.
  */
-export async function fanHeatmap(entityIds: string[], within: string, limit = 15): Promise<{ cells: AreaScore[]; call: QlooCall }> {
+export async function fanHeatmap(entityIds: string[], within: string, limit = 15): Promise<{ cells: AreaScore[]; call: QlooCall; savedAt?: string }> {
+  const key = `heat:${entityIds.slice(0, 3).join(",")}:${within}:${limit}`;
+  try {
+    const fresh = await liveHeatmap(entityIds, within, limit);
+    if (fresh.cells.length && fresh.call.surface !== "mock") saveLastGood(key, fresh);
+    return fresh;
+  } catch (e) {
+    // A slow or failed fan map falls back fast: the last good map for the same act and region (labelled
+    // with its date), else the caller ranks cities by room affinity instead.
+    const last = loadLastGood(key);
+    if (last && e instanceof QlooError && e.retryable) {
+      return { cells: last.cells, savedAt: last.at, call: { ...last.call, status: "saved", cached: true, ms: 0,
+        summary: `Live request timed out; Qloo fan map saved ${last.at.slice(0, 10)}` } };
+    }
+    throw e;
+  }
+}
+
+/** Last successful fan maps (aggregate Qloo results only), kept under DATA_DIR for the timeout fallback. */
+const LAST_GOOD_DAYS = 14;
+const lastGoodPath = (key: string) => {
+  const dir = process.env.DATA_DIR || path.join(process.cwd(), ".cache");
+  return path.join(dir, "heatmaps", `${createHash("sha1").update(key).digest("hex")}.json`);
+};
+function saveLastGood(key: string, v: { cells: AreaScore[]; call: QlooCall }) {
+  try {
+    const file = lastGoodPath(key);
+    mkdirSync(/*turbopackIgnore: true*/ path.dirname(file), { recursive: true });
+    writeFileSync(/*turbopackIgnore: true*/ file, JSON.stringify({ at: new Date().toISOString(), cells: v.cells, call: v.call }));
+  } catch { /* best effort */ }
+}
+function loadLastGood(key: string): { at: string; cells: AreaScore[]; call: QlooCall } | undefined {
+  try {
+    const hit = JSON.parse(readFileSync(/*turbopackIgnore: true*/ lastGoodPath(key), "utf8"));
+    return Date.now() - Date.parse(hit.at) < LAST_GOOD_DAYS * 86_400_000 && hit.cells?.length ? hit : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function liveHeatmap(entityIds: string[], within: string, limit: number): Promise<{ cells: AreaScore[]; call: QlooCall }> {
   const ids = entityIds.slice(0, 3);
-  if (ids.length <= 1) return wherePopular(ids[0], within, limit);
-  const runs = await Promise.all(ids.map((id) => wherePopular(id, within, limit)));
+  if (ids.length <= 1) return wherePopular(ids[0], within, limit, HEATMAP_TIMEOUT_MS);
+  const runs = await Promise.all(ids.map((id) => wherePopular(id, within, limit, HEATMAP_TIMEOUT_MS)));
   const merged = new Map<string, AreaScore>();
   for (const cell of runs.flatMap((x) => x.cells)) {
     const known = merged.get(cell.geohash);
@@ -390,6 +446,6 @@ export async function compareAudiences(groupA: string[], groupB: string[], limit
   const results = r.value.results;
   const list: any[] = Array.isArray(results?.tags) ? results.tags : Array.isArray(results) ? results : Object.values(results ?? {}).find(Array.isArray) ?? [];
   const shared = list.filter((x) => typeof x?.name === "string" && isAudienceTag({ id: x.tag_id ?? x.id, type: x.subtype, name: x.name }))
-    .map((x) => x.name as string).slice(0, limit);
+    .map((x) => tidyTag(x.name as string)).slice(0, limit);
   return { shared, call: callFrom("compare_audiences", r, list.length) };
 }

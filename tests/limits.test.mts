@@ -42,3 +42,14 @@ test("the README's limits match the code defaults and the hosted-demo values in 
   assert.ok(readme.includes(row), `README limits row should be: ${row}`);
   assert.ok(readme.includes(`| \`LLM_DAILY_CAP\` | \`${dflt("LLM_DAILY_CAP")}\` (hosted demo: \`${hosted("LLM_DAILY_CAP")}\`) |`), "LLM cap row");
 });
+
+test("the daily live-tour cap survives a restart (saved under DATA_DIR)", async () => {
+  const { execFileSync } = await import("node:child_process");
+  const { mkdtempSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const dir = mkdtempSync(`${tmpdir()}/caps-`);
+  const once = () => JSON.parse(execFileSync(process.execPath, ["--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--input-type=module", "-e",
+    `const l=await import(${JSON.stringify(new URL("../src/lib/limits.ts", import.meta.url).href)});console.log(JSON.stringify(l.takeDailyRun(new Date("2026-11-03T10:00:00Z")).ok))`],
+    { env: { ...process.env, DATA_DIR: dir, TOUR_DAILY_CAP: "2" } }).toString());
+  assert.deepEqual([once(), once(), once()], [true, true, false], "the third run in a new process is refused");
+});

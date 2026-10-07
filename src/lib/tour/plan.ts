@@ -2,11 +2,12 @@
  * A full Tour Scout run: Phase A (deterministic Qloo calls, streamed), then Phase B (one synthesis
  * call), then assembly. Qloo values in the plan come from Phase A only; model text is guarded.
  */
+import { venueTown } from "../text.ts";
 import { randomUUID } from "node:crypto";
 import { Channel } from "../evidence.ts";
 import { insightGuard } from "../guard.ts";
 import { MARKETS } from "../markets.ts";
-import { LlmError, scriptedProvider, synthesisProvider, type RawSynthesis, type SynthesisInput, type SynthesisProvider } from "../llm.ts";
+import { LlmError, llmStatus, scriptedProvider, synthesisProvider, type RawSynthesis, type SynthesisInput, type SynthesisProvider } from "../llm.ts";
 import { QlooError, qlooMode } from "../qloo.ts";
 import { ARENA_POPULARITY, runPhaseA, signalsOf, type PhaseAResult } from "./pipeline.ts";
 import type { StopData, TourEvent, TourInput, TourPlan, TourStop } from "./types.ts";
@@ -65,7 +66,7 @@ function twoOpt(pts: Point[], order: number[]): number[] {
  * 8 stops, 2-opt beyond), which never crosses itself and so starts and ends at the extremes. The
  * path starts at whichever end has the stronger fan affinity.
  */
-export function routeOrder(stops: StopData[]): StopData[] {
+export function routeOrder(stops: StopData[], start?: { lat: number; lng: number }): StopData[] {
   const located = stops.filter((s) => s.city.lat !== undefined && s.city.lng !== undefined);
   if (located.length < 3) return stops;
   const pts = project(located);
@@ -81,7 +82,9 @@ export function routeOrder(stops: StopData[]): StopData[] {
   } else {
     best = twoOpt(pts, indices);
   }
-  if (located[best[best.length - 1]].city.affinity > located[best[0]].city.affinity) best = [...best].reverse();
+  // Start nearest the home base when given, else at the stronger end.
+  const d = (s: StopData) => (start ? Math.hypot(s.city.lat! - start.lat, s.city.lng! - start.lng) : 0);
+  if (start ? d(located[best[best.length - 1]]) < d(located[best[0]]) : located[best[best.length - 1]].city.affinity > located[best[0]].city.affinity) best = [...best].reverse();
   return [...best.map((i) => located[i]), ...stops.filter((s) => !located.includes(s))];
 }
 
@@ -102,6 +105,8 @@ export function synthesisInput(input: TourInput, a: PhaseAResult, arenaScale: bo
       fanHotspot: s.city.hotspot ? true : undefined, hotspotEvidence: s.city.hotspot?.evidence,
       cluster: s.cluster && !/^-?\d/.test(s.cluster.name) ? s.cluster.name : undefined, clusterEvidence: s.cluster?.evidence,
       venues: s.venues.map((v) => v.name), venuesEvidence: s.venues[0]?.evidence,
+      pitchTo: s.venues[0] ? { venue: s.venues[0].name, town: venueTown(s.venues[0]) } : undefined,
+      ...rankIn(a, s.city.name),
       opener: s.opener?.name, openerEvidence: s.opener?.evidence,
       shared: s.opener?.overlap?.shared, sharedEvidence: s.opener?.overlap?.evidence,
     })),
@@ -112,14 +117,35 @@ export function synthesisInput(input: TourInput, a: PhaseAResult, arenaScale: bo
  * @param templateSummary code-written summary used when the model's summary is withheld by the guard,
  *   so the plan never opens without one (it is labelled TEMPLATE, never AI).
  */
-export function assemblePlan(input: TourInput, a: PhaseAResult, raw: RawSynthesis, meta: { qloo: "live" | "mock"; llm: string; arenaScale: boolean; phaseAMs: number; synthesisMs: number; totalMs: number }, templateSummary?: RawSynthesis["summary"]): TourPlan {
-  const { guard, list, withheld } = insightGuard(a.ledger.ids(), meta.llm.startsWith("scripted"), { capacity: input.capacity, offRoute: offRouteOf(a) });
+/** A city's rank among every scored city of the run (1 = best). */
+export function rankIn(a: { cities?: { name: string; affinity: number }[]; stops: { city: { name: string; affinity: number } }[] }, city: string): { rank?: number; of?: number } {
+  const pool = a.cities?.length ? a.cities : a.stops.map((s) => s.city);
+  const sorted = [...pool].sort((x, y) => y.affinity - x.affinity);
+  const i = sorted.findIndex((c) => clean(c.name) === clean(city));
+  return i >= 0 ? { rank: i + 1, of: sorted.length } : {};
+}
+
+/** What the guard needs to know about this plan (see guard.ts planClaims). */
+export const guardOptsOf = (input: TourInput, a: Pick<PhaseAResult, "stops" | "cities"> & { coverage?: PhaseAResult["coverage"] }) => ({
+  capacity: input.capacity, offRoute: offRouteOf(a as PhaseAResult),
+  actName: input.artist?.name ?? input.emerging?.name, emerging: !input.artist,
+  hotspotCities: a.stops.filter((s) => s.city.hotspot).map((s) => clean(s.city.name)),
+  cityRanks: Object.fromEntries(a.stops.map((s) => [clean(s.city.name), rankIn(a as never, s.city.name).rank ?? 0])),
+});
+
+export function assemblePlan(input: TourInput, a: PhaseAResult, raw: RawSynthesis, meta: { qloo: "live" | "mock"; llm: string; arenaScale: boolean; phaseAMs: number; synthesisMs: number; totalMs: number }, template?: RawSynthesis): TourPlan {
+  const templateSummary = template?.summary;
+  // A withheld model pitch falls back to the code-written one (labelled TEMPLATE), so every stop keeps a sendable email.
+  const tGuard = insightGuard(a.ledger.ids(), true, guardOptsOf(input, a)).guard;
+  const templateText = (id: string, field: "why" | "pitch", label: string) => tGuard(label, template?.stops?.find((s) => String(s?.stop_id) === id)?.[field]);
+  const templatePitch = (id: string, label: string) => templateText(id, "pitch", label);
+  const { guard, list, withheld } = insightGuard(a.ledger.ids(), meta.llm.startsWith("scripted"), guardOptsOf(input, a));
   const text = new Map((raw.stops ?? []).map((s) => [String(s?.stop_id), s]));
-  const stops: TourStop[] = routeOrder(a.stops).map((s, i) => ({
+  const stops: TourStop[] = routeOrder(a.stops, a.coverage?.regional?.start).map((s, i) => ({
     ...s,
     order: i + 1,
-    why: guard(`${clean(s.city.name)} why`, text.get(s.stopId)?.why),
-    pitch: guard(`${clean(s.city.name)} pitch`, text.get(s.stopId)?.pitch),
+    why: guard(`${clean(s.city.name)} why`, text.get(s.stopId)?.why) ?? templateText(s.stopId, "why", `${clean(s.city.name)} why`),
+    pitch: guard(`${clean(s.city.name)} pitch`, text.get(s.stopId)?.pitch) ?? templatePitch(s.stopId, `${clean(s.city.name)} pitch`),
   }));
   return {
     id: randomUUID(),
@@ -132,6 +158,7 @@ export function assemblePlan(input: TourInput, a: PhaseAResult, raw: RawSynthesi
       popularity: input.artist?.popularity,
       arenaScale: meta.arenaScale,
       proxyOf: input.emerging?.proxies.map((p) => p.name),
+      proxyPopularity: input.emerging ? Math.max(0, ...input.emerging.proxies.map((p) => p.popularity ?? 0)) || undefined : undefined,
     },
     signals: signalsOf(input),
     inputs: { region: input.region, candidateCities: input.candidateCities, stops: input.stops, capacity: input.capacity },
@@ -139,7 +166,7 @@ export function assemblePlan(input: TourInput, a: PhaseAResult, raw: RawSynthesi
     stops,
     candidates: a.cities,
     coverage: a.coverage,
-    summary: guard("summary", raw.summary) ?? insightGuard(a.ledger.ids(), true, { capacity: input.capacity, offRoute: offRouteOf(a) }).guard("summary", templateSummary),
+    summary: guard("summary", raw.summary) ?? insightGuard(a.ledger.ids(), true, guardOptsOf(input, a)).guard("summary", templateSummary),
     theme: list("theme", raw.theme, 4),
     merch: list("merch", raw.merch, 4),
     risks: list("risks", raw.risks, 4),
@@ -157,7 +184,10 @@ function errorEvent(e: unknown): TourEvent {
 export async function* planTour(input: TourInput, signal?: AbortSignal, provider: SynthesisProvider = synthesisProvider()): AsyncGenerator<TourEvent> {
   const started = Date.now();
   const mode = await qlooMode();
-  yield { type: "mode", qloo: mode.mock ? "mock" : "live", llm: provider.name, reason: mode.reason };
+  // When no model call can be made (no key, budget or daily cap used up), every label says template.
+  const status = provider.name === "scripted" ? undefined : llmStatus();
+  const llmName = status && !status.available ? `scripted (fallback from ${provider.name})` : provider.name;
+  yield { type: "mode", qloo: mode.mock ? "mock" : "live", llm: llmName, reason: mode.reason };
 
   const events = new Channel<TourEvent>();
   const phaseA = runPhaseA(input, events, signal).finally(() => events.close());
@@ -178,11 +208,11 @@ export async function* planTour(input: TourInput, signal?: AbortSignal, provider
 
   const synthStarted = Date.now();
   const sInput = synthesisInput(input, a, arenaScale);
-  yield { type: "writing", llm: provider.name };
+  yield { type: "writing", llm: llmName };
 
   // Stream finished pieces of the model's text: an entry is complete once the next one has started.
   const textEvents = new Channel<TourEvent>();
-  const { guard } = insightGuard(a.ledger.ids(), provider.name === "scripted", { capacity: input.capacity, offRoute: offRouteOf(a) });
+  const { guard } = insightGuard(a.ledger.ids(), provider.name === "scripted", guardOptsOf(input, a));
   const sent = new Set<string>();
   const onPartial = (snap: RawSynthesis) => {
     const real = (i?: { text?: unknown }) => typeof i?.text === "string" && i.text.trim().length >= 25;
@@ -197,7 +227,8 @@ export async function* planTour(input: TourInput, signal?: AbortSignal, provider
       const id = String(entry?.stop_id);
       if (sent.has(id) || !a.stops.some((s) => s.stopId === id) || !real(entry?.why) || !real(entry?.pitch)) continue;
       sent.add(id);
-      textEvents.push({ type: "stop_text", stopId: id, why: guard("why", entry.why), pitch: guard("pitch", entry.pitch) });
+      const city = clean(a.stops.find((s) => s.stopId === id)!.city.name);
+      textEvents.push({ type: "stop_text", stopId: id, why: guard(`${city} why`, entry.why), pitch: guard(`${city} pitch`, entry.pitch) });
     }
   };
 
@@ -221,6 +252,6 @@ export async function* planTour(input: TourInput, signal?: AbortSignal, provider
   yield {
     type: "plan",
     plan: assemblePlan(input, a, raw!, { qloo: mode.mock ? "mock" : "live", llm, arenaScale, phaseAMs, synthesisMs, totalMs: Date.now() - started },
-      (await scriptedProvider.synthesize(sInput)).summary),
+      await scriptedProvider.synthesize(sInput)),
   };
 }

@@ -3,6 +3,7 @@
  * reports surface "mock", so the UI can never present it as Qloo data.
  * QLOO_MOCK_DELAY_MS adds latency per call to make streaming behave like a live run.
  */
+import { MARKETS } from "./markets.ts";
 import geohash from "ngeohash";
 import type { AreaScore, Demographics, InsightsType, QEntity, QlooCall, Resolution, Tag } from "./qloo.ts";
 
@@ -34,7 +35,15 @@ function regionOf(location = ""): keyof typeof CITIES {
   if (/united kingdom|\buk\b|england|scotland|london|manchester|glasgow|bristol|leeds|brighton/.test(l)) return "uk";
   return "us";
 }
-const cityIn = (location = "") => ALL_CITIES.find((c) => location.toLowerCase().includes(c.name.toLowerCase()));
+const COUNTRIES = /^(united states|usa|us|united kingdom|uk|india|canada|australia|germany)$/i;
+/** A sample city, or (for a touring market not in the sample list) a city of that name without coordinates. */
+const cityIn = (location = "") => ALL_CITIES.find((c) => location.toLowerCase().includes(c.name.toLowerCase()))
+  ?? (location && !COUNTRIES.test(location.trim()) ? marketPoint(location) : undefined);
+function marketPoint(location: string) {
+  const name = location.split(",")[0].trim();
+  const m = MARKETS.find((x) => x.query.toLowerCase() === location.trim().toLowerCase() || x.name.toLowerCase() === name.toLowerCase());
+  return { name, lat: m?.lat ?? 39.5, lng: m?.lng ?? -98.35 };
+}
 
 function seeded(s: string) {
   let h = 2166136261;

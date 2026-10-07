@@ -6,6 +6,8 @@
 #   BILLING_ACCOUNT=XXXXXX-XXXXXX-XXXXXX scripts/deploy-cloudrun.sh budget   alert-only budget (no cap)
 #   CONFIRM_PUBLIC=1 scripts/deploy-cloudrun.sh deploy   build from source and deploy (public URL)
 #   scripts/deploy-cloudrun.sh verify               health check and a preset smoke test
+#   scripts/deploy-cloudrun.sh judging-on           judging window: min instances 1 + higher caps
+#   scripts/deploy-cloudrun.sh judging-off          back to scale-to-zero and the normal caps
 #
 # Runs in bash on Linux (incl. WSL2 Ubuntu) or macOS; uses only bash, grep, cut, sed, tr and curl.
 # Needs: gcloud, logged in (`gcloud auth login`) with the project set (`gcloud config set project ID`).
@@ -105,8 +107,22 @@ verify() {
   say "Health: $url/api/health"
   curl -fsS "$url/api/health"; echo
   say "Preset replay (no API calls)"
-  curl -fsS -o /dev/null -w "demo page %{http_code} in %{time_total}s\n" "$url/?demo=us-indie-band"
-  curl -fsS -o /dev/null -w "preset data %{http_code}\n" "$url/presets/us-indie-band.json"
+  curl -fsS -o /dev/null -w "demo page %{http_code} in %{time_total}s\n" "$url/?demo=us-emerging"
+  curl -fsS -o /dev/null -w "preset data %{http_code}\n" "$url/presets/us-emerging.json"
+}
+
+# Env file (KEY: "value" lines) as KEY=value,KEY=value for --update-env-vars.
+env_pairs() { grep -E '^[A-Z_]+: ' "$1" | sed -E 's/^([A-Z_]+): "([^"]*)".*/\1=\2/' | paste -sd, -; }
+
+judging() {
+  if [[ "$1" == on ]]; then
+    gcloud run services update "$SERVICE" --project "$PROJECT" --region "$REGION" --min-instances 1 \
+      --update-env-vars "$(env_pairs deploy/cloudrun.judging.env.yaml)"
+  else
+    gcloud run services update "$SERVICE" --project "$PROJECT" --region "$REGION" --min-instances 0 \
+      --update-env-vars "$(env_pairs deploy/cloudrun.env.yaml | tr , '\n' | grep -E "^($(grep -oE '^[A-Z_]+' deploy/cloudrun.judging.env.yaml | paste -sd'|' -))=" | paste -sd, -)"
+  fi
+  verify
 }
 
 case "${1:-plan}" in
@@ -115,5 +131,7 @@ case "${1:-plan}" in
   budget) budget ;;
   deploy) deploy ;;
   verify) verify ;;
-  *) echo "usage: $0 plan|setup|budget|deploy|verify" >&2; exit 2 ;;
+  judging-on) judging on ;;
+  judging-off) judging off ;;
+  *) echo "usage: $0 plan|setup|budget|deploy|verify|judging-on|judging-off" >&2; exit 2 ;;
 esac
