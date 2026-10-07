@@ -126,6 +126,7 @@ const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 export function planClaims(field: string, text: string, o: GuardOpts): string | undefined {
   if (/\b(he|she|him|her|hers|his)\b/i.test(text)) return "used he/she (the act's gender is not in the data)";
   if (/\b(already booked|is booked|are booked|booked (for|at|in))\b/i.test(text)) return "presented a suggestion as a booking";
+  if (/\branks? #?\d+[^.]{0,20}\b(nationally|in the (country|nation|US|United States))\b/i.test(text)) return "presented a rank among the scored cities as a national rank";
   if (/\b(optimi[sz]ed|optimal|optimum|perfect(ly)? (fit|match))\b/i.test(text)) return "claimed the plan is optimal (the data ranks options; it does not prove a best)";
   if (/\bmatch(es|ed)?\b[^.]{0,40}\b(well|perfectly|ideally)\b|\b(well|perfectly|ideally)[- ]matched\b|\b(line-?up|openers?|support acts?) (is|are) (strong|great|perfect|ideal)\b/i.test(text)) return "claimed a fit the tool results did not measure";
   if (o.emerging && /\b(opener|openers|opens)\b/i.test(text) && !/\bopen for\b/i.test(text)) return "called a support-slot act an opener (the new act opens for them)";

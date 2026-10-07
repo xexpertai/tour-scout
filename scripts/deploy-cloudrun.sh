@@ -21,7 +21,9 @@ SERVICE=${SERVICE:-tour-scout}
 BUCKET=${BUCKET:-${PROJECT}-tour-scout-data}
 SA_NAME=tour-scout-run
 SA="${SA_NAME}@${PROJECT}.iam.gserviceaccount.com"
-BUDGET_USD=${BUDGET_USD:-10}
+# Alert-only budget in the billing account's own currency (a budget must use it, e.g. INR):
+# BUDGET_AMOUNT=850 BUDGET_CURRENCY=INR, or leave the currency out to read it from the account.
+BUDGET_AMOUNT=${BUDGET_AMOUNT:-${BUDGET_USD:-10}}
 [[ -n "$PROJECT" ]] || { echo "No project: run gcloud config set project <PROJECT_ID>" >&2; exit 1; }
 
 say() { printf '\n== %s\n' "$*"; }
@@ -42,8 +44,10 @@ Service        $SERVICE  (min 0, max 1 instance; 1 vCPU, 1 GiB; gen2; startup CP
 Service acct   $SA  (secret accessor on 2 secrets; object user on the bucket; nothing else)
 Data bucket    gs://$BUCKET  (mounted at /data: share links, LLM day counter, place-name cache)
 Secrets        qloo-api-key <- QLOO_API_KEY, claude-api-key <- CLAUDE_API_KEY (from env or .env.local)
-Env            deploy/cloudrun.env.yaml (caps: 3 tours/visitor/h, 40 tours/day, 60 model calls/day)
-Budget         alert-only budget of \$${BUDGET_USD}/month at 50%, 90%, 100% (email to billing admins; no cap)
+Env            deploy/cloudrun.env.yaml (caps: 3 tours/visitor/h, 40 tours/day, 30 model calls/day, \$1.50 model spend ceiling)
+Judging env    deploy/cloudrun.judging.env.yaml (20 tours/visitor/h, 120 tours/day, 45 model calls/day, \$4 ceiling)
+Build perms    default compute SA gets roles/cloudbuild.builds.builder and roles/run.builder (source deploys on a new project)
+Budget         alert-only budget of ${BUDGET_AMOUNT} in the billing account's currency, at 50%, 90%, 100% (email to billing admins; no cap)
 EOF
 }
 
@@ -51,6 +55,13 @@ setup() {
   say "APIs"
   gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com \
     secretmanager.googleapis.com storage.googleapis.com iam.googleapis.com billingbudgets.googleapis.com --project "$PROJECT"
+  say "Build permissions (source deploys on a new project build as the default compute service account)"
+  local number
+  number=$(gcloud projects describe "$PROJECT" --format 'value(projectNumber)')
+  for role in roles/cloudbuild.builds.builder roles/run.builder; do
+    gcloud projects add-iam-policy-binding "$PROJECT" --member "serviceAccount:${number}-compute@developer.gserviceaccount.com" \
+      --role "$role" --condition None >/dev/null
+  done
   say "Service account"
   gcloud iam service-accounts describe "$SA" --project "$PROJECT" >/dev/null 2>&1 \
     || gcloud iam service-accounts create "$SA_NAME" --display-name "Tour Scout (Cloud Run runtime)" --project "$PROJECT"
@@ -82,8 +93,10 @@ budget() {
     echo "budget tour-scout exists"; return
   fi
   # Alerts only: a budget never stops spending; the caps in deploy/cloudrun.env.yaml bound usage.
+  # The amount must be in the billing account's currency.
+  local currency=${BUDGET_CURRENCY:-$(gcloud billing accounts describe "$BILLING_ACCOUNT" --format 'value(currencyCode)')}
   gcloud billing budgets create --billing-account "$BILLING_ACCOUNT" --display-name tour-scout \
-    --budget-amount "${BUDGET_USD}USD" --filter-projects "projects/$PROJECT" \
+    --budget-amount "${BUDGET_AMOUNT}${currency:-USD}" --filter-projects "projects/$PROJECT" \
     --threshold-rule percent=0.5 --threshold-rule percent=0.9 --threshold-rule percent=1.0
 }
 

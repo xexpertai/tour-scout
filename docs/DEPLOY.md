@@ -35,7 +35,7 @@ Nothing here has been run yet. **Deploying makes the demo public and can cost mo
 - Request-based Cloud Run with min instances 0 bills only while requests run. A live tour is about a minute of one vCPU, so demo traffic should stay inside Cloud Run's monthly free tier.
 - The other charges are cents: Artifact Registry image storage (each deploy adds an image; delete old ones after judging), Cloud Storage for a few MB, Secret Manager for two secrets, and Cloud Build for a few builds.
 - Check current prices on the [Cloud Run pricing page](https://cloud.google.com/run/pricing).
-- **Budget:** an alert-only budget (default $10/month) emails the billing admins at 50%, 90% and 100%. It never stops the service. What bounds spend is the caps above plus `max instances 1`.
+- **Budget:** an alert-only budget (about $10/month) emails the billing admins at 50%, 90% and 100%. A budget must be in the billing account's currency: the script reads it (`gcloud billing accounts describe --format='value(currencyCode)'`), or set `BUDGET_AMOUNT=850 BUDGET_CURRENCY=INR`. It never stops the service. What bounds spend is the caps above plus `max instances 1`.
 
 ## Your steps (about 10 minutes, in a browser and a terminal)
 
@@ -75,14 +75,14 @@ Everything runs in the Ubuntu shell. Work inside the Linux file system (`~/…`)
    ```
    `deploy` ends with `verify`, a health check plus a preset smoke test. Then do the browser smoke test below.
 
-No Docker, Node or local build is needed: Cloud Build builds the image from the uploaded source. A free-trial billing account must be activated before `setup` can enable the APIs.
+No Docker, Node or local build is needed: Cloud Build builds the image from the uploaded source. On a new project the build runs as the default compute service account, so `setup` grants it `roles/cloudbuild.builds.builder` and `roles/run.builder`; without them the source deploy fails. A free-trial billing account must be activated before `setup` can enable the APIs.
 
 ## What the script does (I run it once you have done the above)
 
 ```
 scripts/deploy-cloudrun.sh plan                                  # prints the plan, changes nothing
 scripts/deploy-cloudrun.sh setup                                 # APIs, service account, bucket, secrets
-BILLING_ACCOUNT=<ID> scripts/deploy-cloudrun.sh budget           # alert-only budget, $10/month
+BILLING_ACCOUNT=<ID> scripts/deploy-cloudrun.sh budget           # alert-only budget (BUDGET_AMOUNT in the account's currency)
 CONFIRM_PUBLIC=1 scripts/deploy-cloudrun.sh deploy               # Cloud Build + deploy, then verify
 scripts/deploy-cloudrun.sh verify                                # health + preset smoke test
 ```

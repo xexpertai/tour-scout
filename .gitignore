@@ -52,3 +52,6 @@ next-env.d.ts
 
 # python bytecode
 __pycache__/
+
+# local-only review notes (never tracked)
+docs/DESIGN_REVIEW.md

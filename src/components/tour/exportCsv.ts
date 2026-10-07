@@ -12,7 +12,7 @@ function cell(value: unknown): string {
 /** One row per stop, with the provenance of every column spelled out in the header. */
 export function planToCsv(plan: TourPlan): string {
   const header = [
-    "Stop", "City", "Fan affinity 0-100 (Qloo)", "Fan cluster (OpenStreetMap name)", "Venues (Qloo)", "Opener idea (Qloo)",
+    "Stop", "City", "Fan affinity 0-100 (Qloo)", "Fan cluster (OpenStreetMap name)", "Venues (Qloo)", plan.artist.proxyOf?.length ? "Support slot idea (Qloo)" : plan.artist.type === "person" ? "Feature act idea (Qloo)" : "Opener idea (Qloo)",
     "Shared tastes with opener (Qloo)", "Why (text)", "Why provenance", "Pitch email (text)", "Pitch provenance", "Evidence ids",
   ];
   const rows = plan.stops.map((s) => [

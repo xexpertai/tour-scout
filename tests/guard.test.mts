@@ -139,3 +139,9 @@ test("a summary may call only top-three cities 'among the strongest'", async () 
   assert.ok(planClaims("summary", "Qloo's data ranks New York, Washington DC and Providence among the strongest cities.", o));
   assert.equal(planClaims("summary", "Qloo's data ranks New York and Washington DC among the strongest cities.", o), undefined);
 });
+
+test("a rank among the scored cities is not a national rank", async () => {
+  const { planClaims } = await import("../src/lib/guard.ts");
+  assert.ok(planClaims("Burlington why", "Burlington ranks #2 nationally for this audience.", {}));
+  assert.equal(planClaims("Burlington why", "Burlington ranks #2 of the scored cities.", {}), undefined);
+});

@@ -2,7 +2,7 @@
 
 **Find your fans before you book the room.** Tour Scout plans a small tour for an indie musician or comedian from where their audience's taste actually is, using [Qloo](https://www.qloo.com)'s taste graph, then an agent checks the plan with Qloo tools.
 
-**Try it:** _hosted link pending_ · **Video (1:27):** _link pending_ · **Code:** this repo (MIT)
+**Try it:** [tour-scout-196979752200.us-central1.run.app](https://tour-scout-196979752200.us-central1.run.app) · **Video (1:27):** _link pending_ · **Code:** this repo (MIT)
 
 ![The fan map lights up: Qloo's hotspots for fans of Joanna Sternberg, then the drivable route (live Qloo data)](docs/screenshots/hero.gif)
 
@@ -18,7 +18,7 @@ Built for the Qloo Agentic Hackathon. MIT licensed. Built with AI coding assista
 
 ## Try it in 60 seconds
 
-1. Open the app (hosted link: _pending_) and tap a **demo poster**, such as *Maya* (a fictional first-tour act that sounds like Joanna Sternberg). A run captured from live Qloo data replays instantly:
+1. Open the [hosted app](https://tour-scout-196979752200.us-central1.run.app) and tap a **demo poster**, such as *Maya* (a fictional first-tour act that sounds like Joanna Sternberg). A run captured from live Qloo data replays instantly:
    - **the fan map lights up**: Qloo's country-wide hotspots bloom as heat;
    - candidate cities get their scores;
    - the camera eases to the winners and the route draws itself.
@@ -229,7 +229,7 @@ docker run -p 8080:8080 -v tour-scout-data:/data -e QLOO_API_KEY -e CLAUDE_API_K
 
 **Demo presets** are captured live runs in `public/presets/`. Recapture them with `LLM_PROVIDER=claude npm run presets:capture [slug…]`; a live capture costs 29–38 Qloo requests and one model call per preset, plus the recorded route check. `npm run presets:recheck` re-applies the current answer rules (guard, code-written verdict, tie note) to the recorded route checks without a model call; it never edits the model's words, only keeps or replaces an answer.
 
-**Checks:** `npm test` (58 tests: guard, pipeline, routing, scout agent, apply, store, CSV, limits, adapter tests against recorded live Qloo responses in `tests/fixtures/`, and checks that the docs match the captured data and the deploy config), `npm run lint`, `npm run typecheck` (generates Next route types first, so it works on a fresh clone), `npm run build`.
+**Checks:** `npm test` (63 tests: guard, pipeline, routing, scout agent, apply, store, CSV, limits, adapter tests against recorded live Qloo responses in `tests/fixtures/`, and checks that the docs match the captured data and the deploy config), `npm run lint`, `npm run typecheck` (generates Next route types first, so it works on a fresh clone), `npm run build`.
 
 ## Screens
 

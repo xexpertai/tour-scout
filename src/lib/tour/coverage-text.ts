@@ -26,7 +26,7 @@ export function coverageText(c: Coverage, region = "the region"): string {
   } else {
     parts.push("Your cities, each scored by its best-matching live room.");
   }
-  if (c.anchorsAbsent?.length) parts.push(`${list(c.anchorsAbsent)} ${c.anchorsAbsent.length === 1 ? "is" : "are"} not among these fans' hotspots, so this run finds the secondary markets you might otherwise skip.`);
+  if (c.anchorsAbsent?.length) parts.push(`${list(c.anchorsAbsent)} ${c.anchorsAbsent.length === 1 ? "is" : "are"} not among these fans' hotspots, so this run is built on the secondary markets where they are; the route check still tests the big cities nearby by their rooms.`);
   const r = c.regional;
   if (r && r.stops > 1) {
     const where = r.start ? `from ${r.start.name}` : r.around ? `around ${r.around}` : "in one region";

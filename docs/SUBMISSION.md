@@ -5,7 +5,7 @@ Draft for qloo.devpost.com (deadline 30 Oct 2026, 11:45 pm EDT; target submit 29
 **Devpost requirements checklist** (from the challenge page)
 
 - [ ] Working app integrating the Qloo API as an agentic tool: yes (Phase A pipeline plus the "Ask the scout" agent)
-- [ ] Hosted externally, end to end: `<DEMO_URL>` (Google Cloud Run; see `docs/DEPLOY.md`)
+- [x] Hosted externally, end to end: https://tour-scout-196979752200.us-central1.run.app (Google Cloud Run; see `docs/DEPLOY.md`)
 - [ ] Public repo with source and instructions: `<REPO_URL>`
 - [ ] Open-source license shown in the repo's About section: MIT
 - [ ] Text description of features and the Qloo integration (below)
@@ -49,7 +49,7 @@ The question they need answered is a taste question: *where are the people who l
 Type an act, or tap one of three demo posters that open instantly. The signature moment: **the fan map lights up**. Qloo's hotspots bloom as heat across the country, the candidate cities get their scores, then the camera eases in and the route draws itself. Tour Scout then:
 
 1. **Confirms the entity.** A "Did you mean…?" card shows the Qloo match before anything runs, because the entity choice changes every later result.
-2. **Finds the fans, in one drivable region.** Qloo's country-wide fan map (`where_popular`) returns the act's hotspots, each snapped to a nearby touring city. Tour Scout works in the region where most hotspots sit and keeps every leg within about 500 km by road; hotspots elsewhere are named as "a second run". For fans of Joanna Sternberg (the Maya demo), that is Boston, Burlington, Albany, New York and Philadelphia, longest drive about 370 km. When most stops are outside the big metros and the fan map skips New York, Los Angeles or Chicago, the plan says it finds "the secondary markets you might otherwise skip".
+2. **Finds the fans, in one drivable region.** Qloo's country-wide fan map (`where_popular`) returns the act's hotspots, each snapped to a nearby touring city. Tour Scout works in the region where most hotspots sit and keeps every leg within about 500 km by road; hotspots elsewhere are named as "a second run". For fans of Joanna Sternberg (the Maya demo), that is Boston, Burlington, Albany, New York and Philadelphia, longest drive about 370 km. When most stops are outside the big metros and the fan map skips New York, Los Angeles or Chicago, the plan says it is built on "the secondary markets where they are", and the route check still tests the big cities nearby by their rooms.
 3. **Ranks each city by room affinity.** That is how strongly this audience favours the city's best-matching live room (Qloo's music-venue or comedy-club tag). One audience's values sit close together, so tickets lead with the fit rank ("#2 of 7") and the plan says when stops are effectively tied.
 4. **Builds each stop:**
    - the neighbourhood where fans cluster (e.g. Old North End, Washington Square West);
@@ -91,7 +91,7 @@ It also works for **stand-up comedians**: comedy clubs, with club comics as open
   - names a city that isn't on the route.
 
   Withheld items are counted on screen. Citations to non-existent Q-ids are dropped.
-- **Stack:** Next.js 16, React 19, TypeScript, Tailwind 4, MapLibre GL with OpenFreeMap vector tiles (free, no key) and OpenStreetMap's Nominatim for neighbourhood names, the Anthropic SDK, Node 22, and Docker for a container host. 58 tests, including adapter tests against recorded live Qloo responses.
+- **Stack:** Next.js 16, React 19, TypeScript, Tailwind 4, MapLibre GL with OpenFreeMap vector tiles (free, no key) and OpenStreetMap's Nominatim for neighbourhood names, the Anthropic SDK, Node 22, and Docker for a container host. 63 tests, including adapter tests against recorded live Qloo responses.
 
 ### Request → result (redacted; live Maya tour from fans of Joanna Sternberg, US, 5 stops)
 
@@ -173,7 +173,7 @@ Q26  compare_audiences GET /v2/analysis/compare  a=<Joanna Sternberg>, b=<Squirr
 
 ## Try it out
 
-- Demo: `<DEMO_URL>`. Tap a demo poster for an instant captured run (its scout suggestion marked "instant" also replays at no cost), or type any artist or comedian for a live run (rate-limited).
+- Demo: https://tour-scout-196979752200.us-central1.run.app. Tap a demo poster for an instant captured run (its scout suggestion marked "instant" also replays at no cost), or type any artist or comedian for a live run (rate-limited).
 - Code: `<REPO_URL>` (MIT)
 - Video (optional): `<VIDEO_URL>`
 
@@ -193,7 +193,7 @@ Q26  compare_audiences GET /v2/analysis/compare  a=<Joanna Sternberg>, b=<Squirr
 
 | Criterion | What judges see |
 | --- | --- |
-| Technological implementation | Official Qloo harness workflows; two-phase agent with streaming; tool-using scout with server-validated proposals; deterministic guard; 58 tests, including adapter tests against recorded live responses |
+| Technological implementation | Official Qloo harness workflows; two-phase agent with streaming; tool-using scout with server-validated proposals; deterministic guard; 63 tests, including adapter tests against recorded live responses |
 | Design | The fan map lighting up, then the route drawing itself; gig-poster UI; compact stop tickets; mobile-first layout with a scout bottom sheet; provenance as quiet dots with a "Show receipts" switch; instant demo flyers |
 | Potential impact | A real, underserved user (indie acts and comedians without data teams); useful from the first tap; extends to promoters and bookers |
 | Quality of the idea | A taste question ("where are the people who like this act?") that only Qloo's cross-domain graph answers, turned into an action (a route, rooms, openers and a pitch) |

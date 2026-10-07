@@ -309,7 +309,7 @@ test("the route says where it stays, how far the longest drive is, and where els
   assert.match(text, /stays around Northampton: the longest drive between stops is about 350 km \(4 h\)/);
   assert.match(text, /Only 3 strong cities sit within a day's drive/);
   assert.match(text, /Fans also concentrate around Austin and Madison: a second run\./);
-  assert.match(coverageText({ ...base, anchorsAbsent: ["New York", "Los Angeles"] }, "United States"), /New York and Los Angeles are not among these fans' hotspots, so this run finds the secondary markets/);
+  assert.match(coverageText({ ...base, anchorsAbsent: ["New York", "Los Angeles"] }, "United States"), /New York and Los Angeles are not among these fans' hotspots, so this run is built on the secondary markets where they are/);
   const { routeOrder } = await import("../src/lib/tour/plan.ts");
   const stop = (name: string, lat: number, lng: number, affinity: number) => ({ stopId: name, city: { entityId: name, name, affinity, lat, lng, evidence: "Q1" }, venues: [] }) as never;
   const order = routeOrder([stop("Boston", 42.36, -71.06, 0.9), stop("Albany", 42.65, -73.76, 0.8), stop("Northampton", 42.33, -72.64, 0.85)], { lat: 42.65, lng: -73.9 });
