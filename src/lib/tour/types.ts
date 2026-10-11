@@ -108,6 +108,17 @@ export type TourPlan = {
   followUps?: FollowUp[];
   /** The plan this one was derived from by applying a scout proposal. */
   parentId?: string;
+  /** Set on an applied plan: applying the change (here or earlier in its chain) made live Qloo requests. */
+  appliedLive?: boolean;
+  /** Hash of the creating browser's owner key (see lib/owner.ts); others fork instead of changing the plan. */
+  owner?: string;
+  /** Set on a copy made because someone asked about or applied a change to another visitor's plan. */
+  forkedFrom?: string;
+  /**
+   * Set on a plan forked from a bundled demo (and kept by every plan derived from it), so a share link
+   * keeps the demo's labels: captured date, and the fictional-act / not-affiliated disclaimer.
+   */
+  demo?: { slug: string; capturedAt: string };
 };
 
 /** A city the answer is about, drawn on the map as a dashed "ghost" pin. */
@@ -145,6 +156,17 @@ export type FollowUp = {
   askedAt: string;
   /** Which model ran the agent, e.g. "claude" or "scripted". */
   by?: string;
+  /** How many of `sources` the server ran itself before the agent's first turn (the route check's pre-check). */
+  serverChecks?: number;
+  /**
+   * Who made the city change: the agent's own propose_change, or the server's check when the agent
+   * missed a stronger city within a day's drive. Absent in recordings made before it was stored.
+   */
+  proposedBy?: "agent" | "server";
+  /** The agent's own one-line reason (first sentence of its final answer), guarded, when the verdict shown is code-written. */
+  agentNote?: Insight;
+  /** The guard's reason when the agent's own words were withheld. */
+  agentNoteWithheld?: string;
 };
 
 export type AskEvent =

@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Landing } from "@/components/tour/Landing";
 import { ResolvePanel } from "@/components/tour/ResolvePanel";
 import { ScoutView, type Heading } from "@/components/tour/ScoutView";
-import { ThemeToggle } from "@/components/tour/atoms";
+import { ThemeToggle, useFeedbackUrl } from "@/components/tour/atoms";
 import { useTourRun } from "@/components/tour/useTourRun";
 import { PRESETS } from "@/lib/tour/presets";
 import { ARENA_POPULARITY } from "@/lib/tour/scale";
@@ -32,6 +32,7 @@ const presetView = (slug?: string): View | undefined => {
 /** The whole app: landing → confirm artist → live scouting or a replayed demo. */
 /** `autoCheck`: run the agent route check when a plan finishes (off with ?check=0, for screen recordings). */
 export function TourApp({ initialDemo, sharedPlan, present, autoCheck = true }: { initialDemo?: string; sharedPlan?: TourPlan; present?: number; autoCheck?: boolean }) {
+  const feedback = useFeedbackUrl();
   const { state, start, replay, reset, ask, applyChange } = useTourRun(sharedPlan);
   const router = useRouter();
   const [view, setView] = useState<View>(() =>
@@ -41,6 +42,7 @@ export function TourApp({ initialDemo, sharedPlan, present, autoCheck = true }: 
 
   const setUrl = (demo?: string) => {
     const url = new URL(window.location.href);
+    url.pathname = "/"; // leaving an applied plan's /t/<id> address
     if (demo) url.searchParams.set("demo", demo);
     else url.searchParams.delete("demo");
     window.history.replaceState(null, "", url);
@@ -115,6 +117,7 @@ export function TourApp({ initialDemo, sharedPlan, present, autoCheck = true }: 
       {view.name !== "run" && (
         <footer className="border-t border-line px-4 py-6 text-center font-mono text-[11px] text-muted">
           Taste data: Qloo · Aggregate audiences only, never individual fans · Map: OpenFreeMap © OpenMapTiles, data © OpenStreetMap contributors
+          {feedback && <>{" · "}<a href={feedback} target="_blank" rel="noopener" className="underline underline-offset-4 hover:text-ink">Tour or book shows? Tell us what this got right or wrong</a></>}
         </footer>
       )}
     </div>

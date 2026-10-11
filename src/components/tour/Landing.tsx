@@ -41,8 +41,8 @@ export function SearchBox({ onSubmit, compact = false, busy = false }: { onSubmi
 
 /** Poster looks: each demo is set like a different gig poster, not a template card. */
 const POSTER = [
-  { card: "bg-[#ff6b1a] text-[#0b0b0f] -rotate-[1.5deg]", accent: "text-[#0b0b0f]/70" },
-  { card: "bg-[#ff2e88] text-[#0b0b0f] rotate-[1deg]", accent: "text-[#0b0b0f]/70" },
+  { card: "bg-[#ff6b1a] text-[#0b0b0f] -rotate-[1.5deg]", accent: "text-[#0b0b0f]/90" },
+  { card: "bg-[#ff2e88] text-[#0b0b0f] rotate-[1deg]", accent: "text-[#0b0b0f]/90" },
   { card: "bg-[#f4f1ea] text-[#0b0b0f] -rotate-[0.6deg] tape", accent: "text-[#0b0b0f]/60" },
   { card: "bg-[#14141b] text-[#f4f1ea] rotate-[1.2deg] ring-1 ring-inset ring-[#3a3a48]", accent: "text-[#a7a2b0]" },
 ];
@@ -53,7 +53,7 @@ function Flyer({ preset, index, onPlay }: { preset: Preset; index: number; onPla
     <button type="button" onClick={() => onPlay(preset.slug)} aria-label={`Open the ${preset.flyer.headline} demo: ${preset.flyer.sub}`}
       className={`poster group relative flex h-72 w-52 shrink-0 snap-start flex-col overflow-hidden rounded-md p-4 text-left shadow-[0_18px_40px_-18px_rgba(0,0,0,.8)] transition-transform hover:rotate-0 hover:-translate-y-1 focus-visible:rotate-0 sm:w-56 ${look.card}`}>
       {preset.stressTest && <span className="stamp absolute right-3 top-3 rotate-[8deg] rounded border-2 border-current px-1.5 font-display text-sm uppercase">Stress test</span>}
-      <span className={`text-xs font-semibold ${look.accent}`}>Live Qloo data</span>
+      <span className={`text-xs font-semibold ${look.accent}`}>Captured from live Qloo data</span>
       <span className="mt-3 font-display uppercase leading-[0.9] [container-type:inline-size]"><span className="block" style={fitDisplay(preset.flyer.headline, "3rem")}>{preset.flyer.headline}</span></span>
       {preset.bill?.length ? (
         <span className="mt-auto block font-display text-[15px] uppercase leading-tight">{preset.bill.map((c, i) => <span key={c}>{c}{i < preset.bill!.length - 1 && <span className={look.accent}> · </span>}</span>)}</span>
@@ -98,7 +98,8 @@ function RoutePreview({ onOpen }: { onOpen: () => void }) {
     <figure className="relative">
       <button type="button" onClick={onOpen} aria-label={plan ? `Open the ${plan.artist.name} demo: ${stops.map((x) => x.city.name).join(", ")}` : "Open the lead demo"}
         className="map-box relative block h-[300px] w-full overflow-hidden rounded-2xl border border-line text-left sm:h-[380px]">
-        {plan && <div className="pointer-events-none absolute inset-0"><TourMap cities={cities} stops={mapStops} cells={plan.coverage?.cells} routeFinal={phase === 3} /></div>}
+        {/* The preview is a picture inside one button: inert, so its pins are neither focusable nor read out as controls. */}
+        {plan && <div inert className="pointer-events-none absolute inset-0"><TourMap cities={cities} stops={mapStops} cells={plan.coverage?.cells} routeFinal={phase === 3} /></div>}
         <span className="absolute bottom-3 left-3 rounded-full bg-bg/85 px-3 py-1.5 text-xs font-semibold text-ink">▶ Open this demo</span>
       </button>
       <figcaption className="mt-2 text-sm text-muted">{plan ? `${possessive(plan.artist.name)} demo (a fictional act, fans of ${plan.artist.proxyOf?.join(", ") ?? plan.artist.name}), from live Qloo data: fan hotspots, then the ${stops.length}-stop route.` : "Loading the demo…"}</figcaption>
@@ -115,8 +116,11 @@ export function Landing({ onSearch, onPreset, busy }: { onSearch: (name: string,
           <h1 className="mt-3 font-display text-[2.9rem] uppercase leading-[0.92] sm:text-7xl lg:text-[5.4rem]">
             Find your fans before you <span className="text-neon">book the room.</span>
           </h1>
-          <p className="mt-5 max-w-xl text-base text-muted sm:text-lg">
-            Tour Scout reads Qloo&apos;s taste graph to find where an act&apos;s audience actually is, then picks the cities, rooms and openers, and drafts the pitch.
+          <p className="mt-5 max-w-xl text-base font-semibold text-ink sm:text-lg">
+            Plan a tour before you have listeners there.
+          </p>
+          <p className="mt-2 max-w-xl text-base text-muted sm:text-lg">
+            Tour Scout reads Qloo&apos;s taste graph to find where people who would like an act are, even from the artists it sounds like, then picks the cities, rooms and openers, and drafts the pitch. Then the <b className="text-ink">route-check agent</b> tests the plan with Qloo tools and proposes at most one change you can apply with a tap.
           </p>
           <div className="mt-7"><SearchBox onSubmit={onSearch} busy={busy} /></div>
           {/* Phones: the demos sit below the fold, so offer the lead one right here. */}

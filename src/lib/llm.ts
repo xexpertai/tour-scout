@@ -30,6 +30,8 @@ export type SynthesisInput = {
     pitchTo?: { venue: string; town?: string };
     /** The city's rank among all scored cities (1 = best) and how many were scored. */
     rank?: number; of?: number; opener?: string; openerEvidence?: string; shared?: string[]; sharedEvidence?: string }[];
+  /** The route in driving order (city names) and its weakest stop, so text about the route's span is right. */
+  route?: { order: string[]; weakest?: string };
 };
 
 type RawInsight = { text: string; evidence: string[] };
@@ -74,10 +76,16 @@ Rules:
 - Demographic values are relative over/under-index scores, not percentages.
 - Mention demographics only as Qloo's aggregate index with the exact bucket and value, e.g. "ages 45–54 over-index (+0.53)". Never characterise the audience by gender or age ("skews male", "older crowd", "mostly women").
 - Demographics describe the whole audience nationally, in aggregate; they are not per city. Never attribute them to a city, never say a group "dominates", and never recommend targeting, excluding, framing for or marketing to an age or gender group.
-- If artist.proxyOf is set, the act is new and has no Qloo data of its own: describe the audience as "fans of <proxyOf names>", never as the act's own fans or tags, and never describe the new act's own music, style or values. In that case a stop's "opener" is an act the new act could ask to support (a support slot: the new act opens for them), never an act opening for the new act.
+- If artist.proxyOf is set, the act is new and has no Qloo data of its own and NO audience of its own: describe the audience as "fans of <proxyOf names>", never as the act's own fans, audience or tags (never "<act> is a new act whose audience…", "<act>'s fans", "our audience", "shares tastes with ours"), and never describe the new act's own music, style or values. In that case a stop's "opener" is an act the new act could ask to support (a support slot: the new act opens for them), never an act opening for the new act.
 - If no stop has fanHotspot: true, the cities were found by room affinity, not by a fan map: never say fans cluster, concentrate, gather or are densest in these cities; say Qloo's room data ranks them.
 - Never use he, she, his or her for the act; use its name or "they".
 - Never call anything "confirmed"; Qloo shows taste affinity, not confirmed demand.
+- Never call the route's weakest stop, or a stop in the bottom third of the scored cities, "strong", "best", "top" or "ideal"; give its rank instead (the facts block says which stops these are).
+- Never call the route's cities as a group "the strongest", "top" or "best" markets unless every stop ranks in the top third of the scored cities.
+- Where fans concentrate in a city comes from Qloo's fan heatmap; rooms come from room affinity. Never say room data shows where fans concentrate.
+- Never state absolutes about the world ("no stronger city exists", "the only market"): the data covers only the cities Qloo scored for this plan.
+- If you name the route's span, name its first and last stop exactly as in ROUTE ORDER ("from <first> to <last>").
+- Never say every stop or each city has fans, hosts fans or is near a hotspot unless every stop has fanHotspot: true.
 - Risks are about touring and the limits of this data (affinity is not demand, rooms unconfirmed, routing, dates, competing shows); never about an audience group.
 - The pitch is an email a booker could receive today. Address it to the room in pitchTo ("Hi <venue> team,"), and name its town (pitchTo.town) if given; never place a room in the fans' cluster neighbourhood (the cluster is where fans concentrate, not where rooms are).
 - In the pitch, never quote affinity numbers, scores, evidence ids or the words "room affinity": say what Qloo's taste data shows in plain words (e.g. "Qloo's taste data ranks <city> among the strongest cities for this audience").
@@ -102,18 +110,26 @@ const SUBMIT_TOUR = { name: "submit_tour", description: "Submit the tour plan te
  * what is true for this plan instead of from habit (it otherwise invented hotspots and described a
  * fictional act's music).
  */
+/** The route's weakest stop, or one in the bottom third of the scored cities (the guard withholds "strong" for these). */
+const lowStop = (input: SynthesisInput, s: SynthesisInput["stops"][number]) =>
+  s.city === input.route?.weakest || (s.rank !== undefined && s.of !== undefined && s.rank > Math.ceil((s.of * 2) / 3));
+
 export function factsBlock(input: SynthesisInput): string {
   const emerging = Boolean(input.artist.proxyOf?.length);
   const who = emerging ? `fans of ${input.artist.proxyOf!.join(" and ")}` : `${input.artist.name}'s audience`;
+  const hotspots = input.stops.filter((s) => s.fanHotspot).length;
   const lines = [
+    ...(input.route?.order.length ? [`ROUTE ORDER: ${input.route.order.join(" → ")} (the route runs from ${input.route.order[0]} to ${input.route.order.at(-1)}).`] : []),
+    `FAN HOTSPOTS: ${hotspots} of ${input.stops.length} stops are near one${hotspots < input.stops.length ? " (never say every stop or each city has fans or a hotspot)" : ""}.`,
+    `RULES FOR THIS PLAN: no absolutes about cities Qloo did not score; ${emerging ? `${input.artist.name} has no audience of its own (write "fans of ${input.artist.proxyOf!.join(" and ")}")` : "describe the audience only through its tags"}; never call a weak stop strong.`,
     `ACT: ${input.artist.name}. ${emerging
       ? `A new act unknown to Qloo. Qloo knows nothing about its music. Write only about the AUDIENCE: ${who}. Never describe ${input.artist.name}'s sound, songwriting, style or values.`
       : `Describe the audience through its tags; do not invent facts about the act.`} Refer to the act by name or "they", never he/she.`,
     `AUDIENCE TAGS: ${input.fan.tags.join(", ") || "(none)"}`,
     ...input.stops.map((s) => [
-      `STOP ${s.stop_id} ${s.city}: ranks #${s.rank ?? "?"} of ${s.of ?? "?"} scored cities${s.rank && s.rank <= 3 ? " (you may say 'among the strongest')" : " (never say 'among the strongest' or 'top': say it is a strong fit on the route)"}`,
+      `STOP ${s.stop_id} ${s.city}: ranks #${s.rank ?? "?"} of ${s.of ?? "?"} scored cities${s.rank && s.rank <= 3 ? " (you may say 'among the strongest')" : lowStop(input, s) ? " (the weakest or a bottom-third stop: never call it strong, best, top or ideal; say where it ranks)" : " (never say 'among the strongest' or 'top'; say where it ranks)"}`,
       `  fan hotspot near this city: ${s.fanHotspot ? "YES (you may say it is near a Qloo fan hotspot)" : "NO (never mention a hotspot for this stop)"}`,
-      `  fans concentrate around (city-level, not a hotspot): ${s.cluster ?? "(not named)"}`,
+      `  fans concentrate around (from Qloo's fan heatmap for the city, not from room data; city-level, not a hotspot): ${s.cluster ?? "(not named)"}`,
       `  pitch goes to: ${s.pitchTo ? `${s.pitchTo.venue}${s.pitchTo.town ? ` in ${s.pitchTo.town}` : ""}` : "(no room)"}; other rooms: ${s.venues.slice(1, 3).join(", ") || "(none)"}`,
       `  ${emerging ? "support-slot idea (the new act would open for them; not bigger than the sounds-like artist)" : "suggested opener (not bigger than the act)"}: ${s.opener ?? "(none)"}${s.shared?.length ? `; shared tastes: ${s.shared.join(", ")}` : ""}`,
     ].join("\n")),
@@ -122,7 +138,7 @@ export function factsBlock(input: SynthesisInput): string {
     "PITCH SKELETON (a support-slot request goes to the HEADLINER's team or agent, not the venue; fill the slots; keep the bracketed placeholders exactly):",
     "  Subject: Support slot request: <act> with <support act> in <city>, [their dates]",
     "  Hi <support act> team,",
-    "  \"<act> is a new act whose audience lines up with yours: <one sentence on what Qloo shows about the shared AUDIENCE, naming the shared tastes>.\"",
+    "  \"<act> is a new act aimed at fans of <sounds-like artists>: <one sentence on what Qloo shows about THOSE fans and the headliner's fans, naming the shared tastes>.\" (The new act has no Qloo data: never say it has an audience or fans of its own.)",
     "  \"If <support act> plays <city> around [their dates], we'd love to open; <room> is a room these fans favour.\"",
     "  About <act>: [one line about the act]. Draw / last play in the area: [draw / last play in the area]. Links: [links].",
   ] : [
@@ -247,7 +263,7 @@ async function claudeOnce(input: SynthesisInput, onPartial?: PartialHandler): Pr
 export function templatePitch(input: SynthesisInput, s: SynthesisInput["stops"][number], name: string): string {
   const room = s.pitchTo?.venue ? clean(s.pitchTo.venue) : undefined;
   const strongest = s.rank !== undefined && s.rank <= 3;
-  const rankLine = strongest ? `ranks ${clean(s.city)} among the strongest cities for` : `shows a strong fit in ${clean(s.city)} for`;
+  const rankLine = strongest ? `ranks ${clean(s.city)} among the strongest cities for` : s.rank !== undefined && s.of ? `ranks ${clean(s.city)} #${s.rank} of ${s.of} scored cities for` : `shows affinity in ${clean(s.city)} for`;
   // A support slot is the headliner's to give: the request goes to their team, with the room as context.
   if (input.artist.proxyOf?.length && s.opener) {
     const head = clean(s.opener);
@@ -256,7 +272,8 @@ export function templatePitch(input: SynthesisInput, s: SynthesisInput["stops"][
       "",
       `Hi ${head} team,`,
       "",
-      `${name} is a new act whose audience lines up with yours: Qloo's taste data ${rankLine} fans of ${input.artist.proxyOf.map(clean).join(" and ")}${s.shared?.length ? `, who share tastes with ${possessive(head)} fans (${s.shared.slice(0, 3).map(clean).join(", ")})` : ""}. If ${head} plays ${clean(s.city)} around [their dates], we'd love to open${room ? `; ${room} is a room these fans favour` : ""}.`,
+      // A new act has no Qloo data of its own: the claim is about the fans of the acts it sounds like.
+      `${name} is a new act aimed at fans of ${input.artist.proxyOf.map(clean).join(" and ")}: Qloo's taste data ${rankLine} those fans${s.shared?.length ? `, who share tastes with ${possessive(head)} fans (${s.shared.slice(0, 3).map(clean).join(", ")})` : ""}. If ${head} plays ${clean(s.city)} around [their dates], we'd love to open${room ? `; ${room} is a room these fans favour` : ""}.`,
       "",
       "About us: [one line about the act]. Draw / last play in the area: [draw / last play in the area]. Links: [links].",
     ].join("\n");
@@ -265,7 +282,7 @@ export function templatePitch(input: SynthesisInput, s: SynthesisInput["stops"][
   const audience = input.artist.proxyOf?.length ? `fans of ${input.artist.proxyOf.map(clean).join(" and ")}` : `${possessive(name)} audience`;
   const support = s.opener
     ? input.artist.proxyOf?.length
-      ? ` We'd love to be considered for a support slot with ${clean(s.opener)}, whose audience shares tastes with ours${s.shared?.length ? ` (${s.shared.slice(0, 2).map(clean).join(", ")})` : ""}.`
+      ? ` We'd love to be considered for a support slot with ${clean(s.opener)}, whose fans share tastes with fans of ${input.artist.proxyOf.map(clean).join(" and ")}${s.shared?.length ? ` (${s.shared.slice(0, 2).map(clean).join(", ")})` : ""}.`
       : ` For support we'd like to approach ${clean(s.opener)}, whose audience shares tastes with ours${s.shared?.length ? ` (${s.shared.slice(0, 2).map(clean).join(", ")})` : ""}.`
     : "";
   return [
@@ -282,6 +299,9 @@ export function templatePitch(input: SynthesisInput, s: SynthesisInput["stops"][
 }
 
 const clean = (s: string) => s.replace(/\s*\(sample\)$/, "");
+/** The code-written "why" for a stop (TEMPLATE): its score, a nearby hotspot, where fans concentrate. `affinity` is 0–100. */
+export const templateStopWhy = (s: { city: string; affinity: number; fanHotspot?: boolean; cluster?: string }) =>
+  `${clean(s.city)} scores ${s.affinity.toFixed(1)} out of 100 on Qloo room affinity${s.fanHotspot ? " and sits near a Qloo fan hotspot" : ""}${s.cluster ? `; fans in the city concentrate around ${clean(s.cluster)}` : ""}.`;
 export const scriptedProvider: SynthesisProvider = {
   name: "scripted",
   async synthesize(input) {
@@ -291,13 +311,14 @@ export const scriptedProvider: SynthesisProvider = {
     const allStops = input.stops.map((s) => s.evidence);
     return {
       summary: {
-        text: `${input.stops.map((s) => clean(s.city)).join(", ")} score highest on Qloo room affinity for ${input.artist.proxyOf?.length ? `fans of ${input.artist.proxyOf.map(clean).join(" and ")}` : `${possessive(name)} audience`}. ${input.artist.arenaScale ? "This is an arena-scale act: the plan shows where the fans are, but no club or theatre rooms are suggested." : input.stops.some((s) => s.fanHotspot) ? "Each stop below names the neighbourhood where those fans cluster." : "No stop is near a country-wide fan hotspot, so this is a rooms-led plan."}`,
+        // "Highest within a day's drive of each other": a stronger city elsewhere may be outside this run.
+        text: `${input.stops.map((s) => clean(s.city)).join(", ")} are the highest-scoring cities on Qloo room affinity for ${input.artist.proxyOf?.length ? `fans of ${input.artist.proxyOf.map(clean).join(" and ")}` : `${possessive(name)} audience`} that sit within a day's drive of each other. ${input.artist.arenaScale ? "This is an arena-scale act: the plan shows where the fans are, but no club or theatre rooms are suggested." : input.stops.some((s) => s.fanHotspot) ? "Each stop below names the neighbourhood where those fans cluster." : "No stop is near a country-wide fan hotspot, so this is a rooms-led plan."}`,
         evidence: [...new Set(allStops)],
       },
       stops: input.stops.map((s) => ({
         stop_id: s.stop_id,
         why: {
-          text: `${clean(s.city)} scores ${s.affinity.toFixed(1)} out of 100 on Qloo room affinity${s.fanHotspot ? " and sits near a Qloo fan hotspot" : ""}${s.cluster ? `; fans in the city concentrate around ${clean(s.cluster)}` : ""}.`,
+          text: templateStopWhy(s),
           evidence: [s.evidence, s.hotspotEvidence, s.clusterEvidence].filter((x): x is string => Boolean(x)),
         },
         pitch: {
@@ -324,8 +345,11 @@ const DAILY_CAP = Math.max(0, Number(process.env.LLM_DAILY_CAP ?? 40));
 const SPEND_CAP_USD = Math.max(0, Number(process.env.LLM_SPEND_CAP_USD ?? 4));
 /** Claude Haiku 4.5 list prices per million tokens (input, output). */
 const PRICE_PER_MTOK = { input: 1, output: 5 };
-/** Headroom kept before the ceiling: the largest single call seen (a synthesis with 8k max output ≈ $0.05). */
-const CALL_RESERVE_USD = 0.05;
+/**
+ * Headroom kept before the ceiling: by default the largest single call seen (a synthesis with 8k max
+ * output ≈ $0.05). A one-off capture with a small ceiling can lower it (LLM_CALL_RESERVE_USD) so a retry fits.
+ */
+const CALL_RESERVE_USD = Math.max(0, Number(process.env.LLM_CALL_RESERVE_USD ?? 0.05));
 /** The spend ceiling applies per budget period (e.g. "pre-judging", "judging"); a new period starts at $0. */
 const BUDGET_PERIOD = process.env.LLM_BUDGET_PERIOD?.trim() || "default";
 const usageFile = () => (process.env.DATA_DIR ? path.join(process.env.DATA_DIR, "llm-usage.json") : undefined);

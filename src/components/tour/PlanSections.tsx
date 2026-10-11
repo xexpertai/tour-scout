@@ -2,10 +2,11 @@
 
 import type { Insight, Withheld } from "@/lib/guard";
 import type { Source } from "@/lib/evidence";
-import { coverageText } from "@/lib/tour/coverage-text";
+import { coverageText, routeNotes } from "@/lib/tour/coverage-text";
+import { requestCount } from "@/lib/tour/source-label";
 import { tidyTag } from "@/lib/text";
 import type { City, Coverage, FanProfile } from "@/lib/tour/types";
-import { Chip, Cites, InsightText, Section, Writing, clean, isSample, score1 } from "./atoms";
+import { Chip, Cites, InsightText, Section, Writing, clean, isSample, score1, useFeedbackUrl } from "./atoms";
 
 const AGE: Record<string, string> = {
   "24_and_younger": "≤24", "25_to_29": "25–29", "30_to_34": "30–34", "35_to_44": "35–44", "45_to_54": "45–54", "55_and_older": "55+",
@@ -102,19 +103,21 @@ export function WithheldNote({ withheld }: { withheld: Withheld[] }) {
   if (!withheld.length) return null;
   return (
     <div className="rounded-xl border border-line bg-surface-2 px-4 py-3 text-sm">
-      <b>{withheld.length} AI statement{withheld.length > 1 ? "s" : ""} withheld by the safe-use guard.</b>
-      <ul className="mt-1 list-disc pl-5 text-xs text-muted">{withheld.map((w, i) => <li key={i}>{w.field}: {w.reason}</li>)}</ul>
+      <b>{withheld.length} AI statement{withheld.length > 1 ? "s" : ""} withheld by the safe-use guard; where a stop or the summary lost its text, code-written text is shown instead.</b>
+      {/* One line per reason, naming every field it applied to. */}
+      <ul className="mt-1 list-disc pl-5 text-xs text-muted">{[...withheld.reduce((m, w) => m.set(w.reason, [...(m.get(w.reason) ?? []), w]), new Map<string, Withheld[]>())].map(([reason, ws]) => <li key={reason}>{ws.map((w) => w.field).join(", ")}: {reason}</li>)}</ul>
     </div>
   );
 }
 
-export function Activity({ steps, running, replay = false }: { steps: { label: string; evidence?: string[]; failed?: boolean }[]; running: boolean; replay?: boolean }) {
+/** `requests` is the number of Qloo requests so far (the same count as Credits), not the number of steps shown. */
+export function Activity({ steps, running, replay = false, requests }: { steps: { label: string; evidence?: string[]; failed?: boolean }[]; running: boolean; replay?: boolean; requests: number }) {
   const recent = steps.slice(-4);
   return (
     <div aria-live="polite" className="rounded-xl border border-line bg-surface px-4 py-3 text-sm">
       <div className="flex items-center justify-between text-muted">
         <span className="font-semibold text-ink">{replay ? (running ? "Replaying a captured run" : "Captured run") : running ? "Scouting live" : "Scouted"}</span>
-        <span>{steps.length} Qloo {replay ? "results" : "calls"}</span>
+        <span>{requests} Qloo request{requests === 1 ? "" : "s"}</span>
       </div>
       <ol className="mt-2 space-y-1">
         {recent.map((s, i) => (
@@ -130,12 +133,13 @@ export function Activity({ steps, running, replay = false }: { steps: { label: s
 }
 
 /** Every Qloo request behind the plan, folded into one line until asked for. */
-export function CreditsRoll({ sources }: { sources: Source[] }) {
+export function CreditsRoll({ sources, planCount }: { sources: Source[]; planCount?: number }) {
+  const feedback = useFeedbackUrl();
   return (
     <section id="credits" className="scroll-mt-24">
       <details className="group rounded-2xl border border-line bg-surface">
         <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-3 px-5 py-3">
-          <span><b className="font-display text-xl uppercase">Credits</b> <span className="text-sm text-muted">· {sources.length} Qloo requests behind this plan, no credentials shown</span></span>
+          <span><b className="font-display text-xl uppercase">Credits</b> <span className="text-sm text-muted">· {requestCount(sources.length, planCount)} behind this plan, no credentials shown</span></span>
           <span className="text-sm text-muted group-open:hidden">View all</span><span className="hidden text-sm text-muted group-open:inline">Hide</span>
         </summary>
         <ol className="border-t border-line px-5 pb-4 font-mono text-xs">
@@ -161,23 +165,23 @@ export function CreditsRoll({ sources }: { sources: Source[] }) {
           ))}
         </ol>
       </details>
-      <p className="mt-3 text-center text-xs text-muted">Taste data: Qloo · Neighbourhood names: OpenStreetMap (Nominatim) · Map: OpenFreeMap, © OpenMapTiles, data © OpenStreetMap contributors</p>
+      <p className="mt-3 text-center text-xs text-muted">Taste data: Qloo · Neighbourhood names: OpenStreetMap (Nominatim) · Map: OpenFreeMap, © OpenMapTiles, data © OpenStreetMap contributors{feedback && <> · <a href={feedback} target="_blank" rel="noopener" className="no-print underline underline-offset-4 hover:text-ink">Feedback on this plan</a></>}</p>
     </section>
   );
 }
 
 /** How the cities were found, the ranking that picked the stops, and a note when data is thin. */
-export function CoverageNote({ coverage, region, cities = [], stopNames = [] }: { coverage?: Coverage; region?: string; cities?: City[]; stopNames?: string[] }) {
+export function CoverageNote({ coverage, region, cities = [], stopNames = [], complete = false }: { coverage?: Coverage; region?: string; cities?: City[]; stopNames?: string[]; complete?: boolean }) {
   if (!coverage) return null;
   // Cities without matching rooms are simply skipped; data is "limited" only when hotspots fall short.
   const limited = coverage.limited || coverage.roomFallback;
   const ranked = [...cities].sort((a, b) => b.affinity - a.affinity);
   const onRoute = (c: City) => stopNames.includes(clean(c.name));
-  // The cut line is drawn only when the route is exactly the top of the ranking (a regional route may skip a stronger, farther city).
-  const k = ranked.filter(onRoute).length;
-  const cut = ranked.slice(0, k).every(onRoute) ? k : 0;
+  // Cut line, off-route and skipped-city notes describe the finished route: none while stops still stream in.
+  const { cut, off, offText, skipped } = routeNotes(ranked, onRoute, complete, clean);
   const top = ranked.filter(onRoute).map((c) => c.affinity * 100);
-  const spread = top.length > 1 ? Math.max(...top) - Math.min(...top) : undefined;
+  const spread = complete && top.length > 1 ? Math.max(...top) - Math.min(...top) : undefined;
+  const isOff = (c: City) => off.some((o) => o.name === c.name);
   return (
     <div className={`rounded-xl border px-4 py-3 text-sm ${limited ? "border-sample/60" : "border-line"} bg-surface`}>
       {limited && <p className="mb-1 font-semibold text-sample">Limited data</p>}
@@ -186,14 +190,17 @@ export function CoverageNote({ coverage, region, cities = [], stopNames = [] }: 
         <ol aria-label="Every city scored, best first" className="mt-3 flex flex-wrap items-center gap-x-1 gap-y-1.5">
           {ranked.map((c, i) => (
             <li key={c.entityId} className="flex items-center">
-              {i === cut && cut > 0 && cut < ranked.length && <span aria-label="cut line" className="mx-2 h-6 w-px bg-neon" />}
+              {i === cut && cut > 0 && cut < ranked.length && <span role="separator" aria-label="Cut line: cities after it are not on the route" className="mx-2 h-6 w-px bg-neon" />}
               <span className={`rounded-md px-2 py-1 ${onRoute(c) ? "bg-surface-2 text-ink" : "text-muted"}`}>
                 {clean(c.name)} <b className="font-display text-base tabular-nums">{score1(c.affinity)}</b> <Cites ids={[c.evidence]} />
+                {isOff(c) && <span className="text-xs"> · outside this run</span>}
               </span>
             </li>
           ))}
         </ol>
       )}
+      {offText && <p className="mt-2 text-xs text-muted">{offText}</p>}
+      {skipped && <p className="mt-2 text-xs text-muted">{skipped}</p>}
       {spread !== undefined && spread < 2 && (
         <p className="mt-2 text-xs text-muted">The stops are within {spread < 0.1 ? "0.1" : spread.toFixed(1)} points of each other: Qloo rates them about equally, so the route and the rooms decide.</p>
       )}

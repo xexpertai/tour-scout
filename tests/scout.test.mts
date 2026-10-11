@@ -178,6 +178,9 @@ test("the server enforces the route check and opener rules the agent's own tools
   assert.equal(f.proposal?.add.length, 1, "a stronger drivable city is swapped in");
   assert.equal(f.answer.kind, "template");
   assert.match(f.answer.text, /^Route check: /);
+  assert.equal(f.proposedBy, "server", "the card can say the server, not the agent, made this swap");
+  assert.equal(f.agentNote?.text, "Route holds.", "the agent's own words stay visible next to the code-written verdict");
+  assert.equal(f.agentNote?.kind, "general", "no evidence cited, so it is labelled GENERAL, not AI");
   // The templated scout never proposes the opener a stop already has.
   const t = await runScout(plan, `Who's a good opener in ${plan.stops[0].city.name} with crossover fans?`, scriptedAgentModel(plan, `Who's a good opener in ${plan.stops[0].city.name}?`), sink());
   assert.notEqual(t.proposal?.opener?.opener.entityId, plan.stops[0].opener?.entityId);
@@ -256,4 +259,45 @@ test("the route verdict explains a swap with numbers and road km", async () => {
 test("cleanAnswer drops inline evidence ids", async () => {
   const { cleanAnswer } = await import("../src/lib/tour/scout.ts");
   assert.equal(cleanAnswer("Route holds: no stronger city (Q37, Q34). Done (Q40)."), "Route holds: no stronger city. Done.");
+});
+
+test("the agent's one-line reason: first sentence only, guarded on its own; its own swap is credited to it", async () => {
+  const { agentOneLine } = await import("../src/lib/tour/scout.ts");
+  const { insightGuard } = await import("../src/lib/guard.ts");
+  const { guard } = insightGuard(new Set(["Q31", "Q36"]));
+  const one = agentOneLine({ text: "Washington, DC (Q36) beats Albany on room affinity and keeps every leg drivable. Swap it in (Q31).", evidence: ["Q31", "Q36"], kind: "interpretation" }, guard);
+  assert.deepEqual([one?.text, one?.evidence, one?.kind], ["Washington, DC (Q36) beats Albany on room affinity and keeps every leg drivable.", ["Q36"], "interpretation"]);
+  assert.equal(agentOneLine({ text: "The route holds. Nothing stronger is within a day's drive. Extra.", evidence: [], kind: "general" }, guard)?.text, "The route holds. Nothing stronger is within a day's drive.", "a short first sentence takes the next one too");
+  assert.equal(agentOneLine({ text: "This will definitely sell out. Fine otherwise.", evidence: [], kind: "general" }, guard), undefined, "guarded");
+  const plan = await makePlan(5);
+  const f = await runScout(plan, "Swap the weakest stop", fakeClaude(plan), sink());
+  assert.equal(f.proposedBy, "agent");
+});
+
+
+test("a question on someone else's shared plan goes on a copy; the owner's own plan is used as is", async () => {
+  const { ownerOf, owns } = await import("../src/lib/owner.ts");
+  const { ownedCopy } = await import("../src/lib/tour/sources.ts");
+  const { loadPlan, savePlan } = await import("../src/lib/store.ts");
+  const fresh = ownerOf(new Request("https://x.test/api/tour/ask"));
+  assert.match(fresh.setCookie!, /^ts_owner=[0-9a-f-]{36}; Path=\/; Max-Age=\d+; HttpOnly; SameSite=Lax; Secure$/);
+  const key = /ts_owner=([^;]+)/.exec(fresh.setCookie!)![1];
+  const alice = ownerOf(new Request("https://x.test/", { headers: { cookie: `a=1; ts_owner=${key}` } }));
+  assert.equal(alice.hash, fresh.hash, "the same key gives the same owner");
+  assert.equal(alice.setCookie, undefined);
+  const bob = ownerOf(new Request("https://x.test/"));
+  const plan = { ...(await makePlan(3)), owner: alice.hash, followUps: [] };
+  await savePlan(plan);
+  assert.ok(owns(plan, alice) && !owns(plan, bob));
+  const mine = await ownedCopy({ plan, forked: false }, alice);
+  assert.equal(mine.plan.id, plan.id);
+  assert.equal(mine.forked, false);
+  const theirs = await ownedCopy({ plan, forked: false }, bob);
+  assert.notEqual(theirs.plan.id, plan.id);
+  assert.equal(theirs.forked, true);
+  assert.equal(theirs.plan.forkedFrom, plan.id);
+  assert.equal(theirs.plan.owner, bob.hash);
+  assert.equal((await loadPlan(plan.id))!.owner, alice.hash, "the original is unchanged");
+  const legacy = { ...plan, owner: undefined };
+  assert.equal((await ownedCopy({ plan: legacy, forked: false }, alice)).forked, true, "a plan with no owner is never changed");
 });

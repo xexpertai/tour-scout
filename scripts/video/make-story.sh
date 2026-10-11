@@ -1,5 +1,5 @@
 #!/bin/zsh
-# The story video (docs/VIDEO_STORYBOARD.md), end to end:  scripts/video/make-story.sh [out_dir]
+# The story video, end to end:  scripts/video/make-story.sh [out_dir]
 #   1) Kokoro af_heart voice lines (video/story.json)      2) word timings for the captions (mlx-whisper)
 #   3) the original score (scripts/video/score.py, CC0)   4) voice + ducked score, -14 LUFS / -1.5 dBTP
 #   5) product footage from a local production build      6) Remotion render (video/remotion)

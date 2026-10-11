@@ -19,15 +19,16 @@
  */
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import geohash from "ngeohash";
 import { mock } from "./qloo-mock.ts";
-import { tidyTag } from "./text.ts";
+import { isTasteName, tidyTag } from "./text.ts";
 
 export const QLOO_BASE_URL = process.env.QLOO_BASE_URL?.trim() || "https://hackathon.api.qloo.com";
 const QLOO_BIN = process.env.QLOO_BIN?.trim() || "qloo";
-const TIMEOUT_MS = 45_000;
+const TIMEOUT_MS = Number(process.env.QLOO_TIMEOUT_MS) || 45_000;
 /** The fan map is the slowest call and the one a run waits on; past this it falls back (see fanHeatmap). */
 const HEATMAP_TIMEOUT_MS = Number(process.env.QLOO_HEATMAP_TIMEOUT_MS) || 20_000;
 // 3 parallel harness processes: at 4 the event key hit 429s during back-to-back tours (M0).
@@ -122,12 +123,123 @@ async function withSlot<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-function run(args: string[], stdin?: string, timeoutMs = TIMEOUT_MS): Promise<string> {
+/** The environment every harness call sees (spawned or in-process). */
+const harnessEnv = () => ({ ...process.env, QLOO_BASE_URL, QLOO_TRUSTED_BASE_URL: process.env.QLOO_TRUSTED_BASE_URL?.trim() || QLOO_BASE_URL, NO_COLOR: "1" });
+
+// ---------------------------------------------------------------- in-process harness
+/**
+ * Starting the harness CLI is the slow part of a Qloo call: each `qloo` process loads a ~140 MB
+ * package before it sends one HTTP request (1.4–1.6 s for `qloo --version` on a laptop, ~3 s on the
+ * 1-vCPU host, and the spawns share that vCPU). So the server runs the same commands in-process
+ * through the harness's own exported entry points (`runQlooExec`, `runQlooSetup`, the functions the
+ * `qloo` binary calls), loaded from the installed package. Same arguments, same JSON on stdout.
+ * Falls back to spawning when the package is not found next to the `qloo` binary, or with
+ * QLOO_INPROCESS=0.
+ */
+type HarnessWrite = { writeOut: (text: string) => void; writeError: (text: string) => void };
+type InProcessHarness = {
+  exec: (argv: string[], options: HarnessWrite & { env: NodeJS.ProcessEnv; signal?: AbortSignal }) => Promise<number>;
+  setup: (argv: string[], options: HarnessWrite & { env: NodeJS.ProcessEnv }) => Promise<number>;
+};
+let harnessLoad: Promise<InProcessHarness | undefined> | undefined;
+
+/** The harness's dist folder, found from the `qloo` binary (a symlink to dist/bin.js in a global install). */
+export function harnessDistDir(bin = QLOO_BIN): string | undefined {
+  const dirs = bin.includes("/") ? [""] : (process.env.PATH ?? "").split(path.delimiter).filter(Boolean);
+  for (const dir of dirs) {
+    try {
+      const real = realpathSync(/*turbopackIgnore: true*/ dir ? path.join(dir, bin) : bin);
+      const dist = path.dirname(real);
+      const pkg = JSON.parse(readFileSync(/*turbopackIgnore: true*/ path.join(dist, "..", "package.json"), "utf8"));
+      if (pkg.name === "@qloo/qloo-harness" && existsSync(/*turbopackIgnore: true*/ path.join(dist, "exec.js"))) return dist;
+      return undefined;
+    } catch {
+      // Not in this PATH entry.
+    }
+  }
+  return undefined;
+}
+
+function inProcessHarness(): Promise<InProcessHarness | undefined> {
+  if (process.env.QLOO_INPROCESS === "0") return Promise.resolve(undefined);
+  harnessLoad ??= (async () => {
+    const dist = harnessDistDir();
+    if (!dist) return undefined;
+    try {
+      const load = (file: string) => {
+        const url = pathToFileURL(`${dist}${path.sep}${file}`).href;
+        return import(/*turbopackIgnore: true*/ /*webpackIgnore: true*/ url);
+      };
+      const [{ runQlooExec }, { runQlooSetup }, { resolveQlooPaths }] = await Promise.all([load("exec.js"), load("setup.js"), load("paths.js")]);
+      if (typeof runQlooExec !== "function" || typeof runQlooSetup !== "function" || typeof resolveQlooPaths !== "function") return undefined;
+      return {
+        exec: (argv, options) => runQlooExec(argv, options),
+        setup: (argv, options) => runQlooSetup(argv, { ...options, paths: resolveQlooPaths({ cwd: process.cwd(), env: options.env }) }),
+      };
+    } catch {
+      return undefined;
+    }
+  })();
+  return harnessLoad;
+}
+
+/**
+ * Loads the harness and reads its credential status when the server starts (src/instrumentation.ts),
+ * so the first visitor after a cold start does not wait for the package to load from disk. Never throws.
+ */
+export async function preloadQloo(): Promise<void> {
+  if (process.env.QLOO_MOCK === "1") return;
+  try {
+    await inProcessHarness();
+    await qlooMode();
+  } catch {
+    // Preloading is an optimisation only; the first real call loads it again.
+  }
+}
+
+/** How Qloo calls run on this server, for /api/health. */
+export async function qlooTransport(): Promise<"in-process" | "process"> {
+  return (await inProcessHarness()) ? "in-process" : "process";
+}
+
+function runInProcess(h: InProcessHarness, args: string[], stdin: string | undefined, timeoutMs: number): Promise<string> {
+  return withSlot(async () => {
+    const abort = new AbortController();
+    let out = "", err = "";
+    const write = { writeOut: (t: string) => { out += t; }, writeError: (t: string) => { err += t; } };
+    const env = harnessEnv();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => { abort.abort(); reject(new QlooError(`Qloo didn't answer within ${Math.round(timeoutMs / 1000)} s`, "QLOO_TIMEOUT", true)); }, timeoutMs);
+    });
+    try {
+      const work = args[0] === "exec"
+        ? h.exec([args[1], ...(stdin ? ["--input", stdin] : [])], { ...write, env, signal: abort.signal })
+        : h.setup(args.slice(1), { ...write, env });
+      await Promise.race([work, timeout]);
+    } catch (e) {
+      if (e instanceof QlooError) throw e;
+      throw new QlooError(`qloo ${args[0]} failed in-process: ${(e as Error).message?.slice(0, 200)}`, "QLOO_NO_OUTPUT", true);
+    } finally {
+      clearTimeout(timer);
+    }
+    if (!out.trim()) throw new QlooError(`qloo ${args[0]} produced no output: ${err.trim().slice(0, 200)}`, "QLOO_NO_OUTPUT", true);
+    dumpRaw(args, stdin, out);
+    return out;
+  });
+}
+
+async function run(args: string[], stdin?: string, timeoutMs = TIMEOUT_MS): Promise<string> {
+  const h = await inProcessHarness();
+  return h ? runInProcess(h, args, stdin, timeoutMs) : runProcess(args, stdin, timeoutMs);
+}
+
+function runProcess(args: string[], stdin?: string, timeoutMs = TIMEOUT_MS): Promise<string> {
   return withSlot(() => new Promise((resolve, reject) => {
     // The binary path is runtime config; the ignore comment stops the bundler tracing the whole project.
     const child = spawn(/*turbopackIgnore: true*/ QLOO_BIN, args, {
       // The harness only trusts a non-production base URL when QLOO_TRUSTED_BASE_URL matches it.
-      env: { ...process.env, QLOO_BASE_URL, QLOO_TRUSTED_BASE_URL: process.env.QLOO_TRUSTED_BASE_URL?.trim() || QLOO_BASE_URL, NO_COLOR: "1" },
+      env: harnessEnv(),
       stdio: ["pipe", "pipe", "pipe"],
     });
     let out = "", err = "";
@@ -315,7 +427,7 @@ export async function entityTags(entityIds: string[], limit = 10): Promise<{ tag
   // Ask for the maximum and filter, since place and business tags crowd the top of the list.
   const r = await execWorkflow("entity_tags", { entities: entityIds, limit: 20 });
   const seen = new Set<string>();
-  const tags: Tag[] = (r.value.results ?? []).filter((t: any) => t?.id && typeof t.name === "string" && t.name.trim() && isAudienceTag(t))
+  const tags: Tag[] = (r.value.results ?? []).filter((t: any) => t?.id && typeof t.name === "string" && t.name.trim() && isTasteName(t.name) && isAudienceTag(t))
     .map((t: any) => ({ id: t.id, name: tidyTag(t.name), type: t.type, affinity: num(t.affinity) }))
     // Different tag families can carry the same name ("Smooth" as style and as artist trait).
     .filter((t: Tag) => !seen.has(t.name.toLowerCase()) && Boolean(seen.add(t.name.toLowerCase()))).slice(0, limit);
@@ -445,7 +557,7 @@ export async function compareAudiences(groupA: string[], groupB: string[], limit
   const r = await execWorkflow("compare_audiences", { group_a: groupA, group_b: groupB, limit: Math.min(20, limit + 4) });
   const results = r.value.results;
   const list: any[] = Array.isArray(results?.tags) ? results.tags : Array.isArray(results) ? results : Object.values(results ?? {}).find(Array.isArray) ?? [];
-  const shared = list.filter((x) => typeof x?.name === "string" && isAudienceTag({ id: x.tag_id ?? x.id, type: x.subtype, name: x.name }))
+  const shared = list.filter((x) => typeof x?.name === "string" && isTasteName(x.name) && isAudienceTag({ id: x.tag_id ?? x.id, type: x.subtype, name: x.name }))
     .map((x) => tidyTag(x.name as string)).slice(0, limit);
   return { shared, call: callFrom("compare_audiences", r, list.length) };
 }

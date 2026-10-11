@@ -11,7 +11,7 @@
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 KIT=$(cd "$1" && pwd)
-OUT=${2:-$ROOT/video/out/story}
+OUT=$(mkdir -p "${2:-$ROOT/video/out/story}" && cd "${2:-$ROOT/video/out/story}" && pwd)
 mkdir -p "$OUT"
 cd "$ROOT"
 for f in footage/footage.json footage/footage-qa.json words.json mix.wav; do [[ -e "$KIT/$f" ]] || { echo "kit is missing $f" >&2; exit 1; }; done
@@ -21,5 +21,5 @@ fi
 python3 scripts/video/story-data.py "$KIT"
 (cd video/remotion && npm ci --silent --no-audit --no-fund && npx tsc -p . && npx remotion render src/index.ts Story "$OUT/story-silent.mp4" --codec h264 --crf 16 --muted --log=error)
 ffmpeg -hide_banner -loglevel error -y -i "$OUT/story-silent.mp4" -i "$KIT/mix.wav" -map 0:v -map 1:a -c:v copy -c:a aac -b:a 256k -ar 48000 -shortest -movflags +faststart "$OUT/tour-scout-story.mp4"
-STORY=1 python3 scripts/video/qa.py "$OUT/tour-scout-story.mp4" "$KIT" "$OUT/qa"
+STORY=1 uv run --no-project --quiet --with pillow python scripts/video/qa.py "$OUT/tour-scout-story.mp4" "$KIT" "$OUT/qa"
 echo "video -> $OUT/tour-scout-story.mp4 (frames to review: $OUT/qa/sheet-*.png)"

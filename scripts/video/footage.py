@@ -26,6 +26,10 @@ SCALE = "1.6667"
 DEMO = f"{BASE}/?demo=us-emerging&video={SCALE}&check=0"        # the lead demo, no automatic route check
 demo_url = lambda slug, check=False: f"{BASE}/?demo={slug}&video={SCALE}" + ("" if check else "&check=0")
 FPS = 30
+# SLOW=<rate> films every take in slow motion (the page's clocks run at <rate>, waits, typing and cursor
+# moves are stretched by 1/<rate>), then plays it back at real speed. Use it on machines whose software
+# renderer captures too few frames per second (WSL/llvmpipe: SLOW=0.25, MAP_RATE=0.06). Default 1: unchanged.
+SLOW = float(os.environ.get("SLOW", "1"))
 LAYOUT_JS = (ROOT / "scripts/video/layout-qa.js").read_text().split("\n", 2)[2]
 OUT.mkdir(parents=True, exist_ok=True)
 META_PATH = OUT / "footage.json"
@@ -87,8 +91,39 @@ SLOW_JS = """
 """
 
 
+def slow_page(page, rate):
+    """Stretches the script's own waits, typing and cursor moves by 1/rate, so a take filmed with the
+    page's clocks at `rate` keeps its real-speed pacing on playback."""
+    if rate == 1.0:
+        return page
+    wait, move_, type_ = page.wait_for_timeout, page.mouse.move, page.keyboard.type
+    pos = {"x": 0.0, "y": 0.0}
+    def mv(x, y, steps=1):
+        x0, y0 = pos["x"], pos["y"]
+        for k in range(1, steps + 1):
+            move_(x0 + (x - x0) * k / steps, y0 + (y - y0) * k / steps)
+            wait(8 / rate)
+        pos["x"], pos["y"] = x, y
+    page.wait_for_timeout = lambda ms: wait(ms / rate)
+    page.mouse.move = mv
+    page.keyboard.type = lambda text, delay=0: type_(text, delay=delay / rate)
+    goto = page.goto
+    def go(url, wait_until=None, **kw):  # a slowed page may never go network-idle (stretched timers keep it busy)
+        r = goto(url, wait_until="load" if wait_until == "networkidle" else wait_until, **kw)
+        if wait_until == "networkidle":
+            wait(2500 / rate)
+        return r
+    page.goto = go
+    wfs = page.wait_for_selector
+    page.wait_for_selector = lambda sel, timeout=None, **kw: wfs(sel, timeout=None if timeout is None else timeout / rate, **kw)
+    page._rate = rate
+    page.set_default_timeout(30000 / rate)
+    return page
+
+
 class Take:
-    def __init__(self, ctx, page, name, rate=1.0):
+    def __init__(self, ctx, page, name, rate=None):
+        rate = getattr(page, "_rate", 1.0) if rate is None else rate
         self.rate = rate
         self.ctx, self.page, self.name = ctx, page, name
         self.dir = OUT / "frames" / name
@@ -186,7 +221,10 @@ def scroll_pane_to(page, selector, offset=24, smooth=True):
       pane.scrollTo({ top: pane.scrollTop + dy, behavior: smooth ? 'smooth' : 'instant' }); }""", [selector, offset, smooth])
 
 
-def context(browser, map_only=False, rate=1.0):
+def context(browser, map_only=False, rate=None):
+    """rate=None: the SLOW default, with the script's waits stretched to match (slow_page)."""
+    stretch = rate is None
+    rate = SLOW if rate is None else rate
     ctx = browser.new_context(viewport={"width": W, "height": H}, color_scheme="dark", reduced_motion="no-preference")
     ctx.add_init_script(CURSOR_JS)
     if rate != 1.0:
@@ -195,7 +233,8 @@ def context(browser, map_only=False, rate=1.0):
         ctx.add_init_script(f"""(() => {{ const css = {json.dumps(MAP_ONLY_CSS)}; const add = () => {{ if (document.getElementById('__maponly')) return;
           const s = document.createElement('style'); s.id = '__maponly'; s.textContent = css; const h = document.head || document.documentElement; if (h) h.appendChild(s); }};
           add(); document.addEventListener('DOMContentLoaded', add); setInterval(add, 100); }})();""")
-    return ctx, ctx.new_page()
+    page = ctx.new_page()
+    return ctx, (slow_page(page, rate) if stretch else page)
 
 
 def demo_done(page, settle=11000, wait_until="networkidle", url=None):
@@ -275,12 +314,13 @@ def take_type(browser):
     ctx.close()
 
 
-MAP_RATE = 0.25
+MAP_RATE = float(os.environ.get("MAP_RATE", "0.25"))
+MAP_WAIT = int(22500 / MAP_RATE)  # 90 s at the default rate
 
 
 def take_map(browser):
     ctx, page = context(browser, map_only=True, rate=MAP_RATE)
-    page.set_default_timeout(90000)
+    page.set_default_timeout(MAP_WAIT)
     demo_done(page, int(9000 / MAP_RATE), "load")  # pre-warm (unfilmed); the slowed page may never go network-idle
     page.goto(f"{BASE}/?video={SCALE}", wait_until="load")
     page.wait_for_timeout(3000)
@@ -289,13 +329,13 @@ def take_map(browser):
     tk.start()
     page.goto(DEMO, wait_until="domcontentloaded")
     tk.mark("load")
-    page.wait_for_function("document.querySelectorAll('.maplibregl-marker').length > 0", timeout=90000)
+    page.wait_for_function("document.querySelectorAll('.maplibregl-marker').length > 0", timeout=MAP_WAIT)
     tk.mark("markers")
-    page.wait_for_function("document.querySelectorAll('.maplibregl-marker.stop').length > 0", timeout=90000)
+    page.wait_for_function("document.querySelectorAll('.maplibregl-marker.stop').length > 0", timeout=MAP_WAIT)
     tk.mark("stops")
-    page.wait_for_selector("text=Credits", state="attached", timeout=90000)
+    page.wait_for_selector("text=Credits", state="attached", timeout=MAP_WAIT)
     tk.mark("planDone")
-    page.wait_for_selector(".maplibregl-marker.stop.on", timeout=90000)
+    page.wait_for_selector(".maplibregl-marker.stop.on", timeout=MAP_WAIT)
     tk.mark("route")
     page.wait_for_timeout(int(5000 / MAP_RATE))
     tk.qa("end", [".maplibregl-marker.stop.on"])
@@ -399,10 +439,18 @@ def take_check(browser):
     tk.mark("apply")
     page.wait_for_selector("text=Applied", timeout=20000)
     tk.mark("applied")
+    notice = page.locator("[role=status]:has-text('This is your copy')")
+    try:
+        notice.wait_for(timeout=15000)
+        tk.mark("copy")
+    except Exception:
+        pass
     page.wait_for_timeout(700)
-    page.get_by_role("button", name="Hide answers").click()
+    page.get_by_role("button", name=re.compile("^Hide( answers)?$")).first.click()
     page.wait_for_timeout(2600)  # the map redraws the changed route
     tk.mark("redrawn")
+    if notice.count():
+        tk.rect("copy", notice)
     tk.qa("redrawn", [".maplibregl-marker.stop.on"])
     page.wait_for_timeout(2400)
     tk.stop()
@@ -413,17 +461,19 @@ def take_phone(browser):
     """A phone (390 px layout, captured at 2x): the demo replays and the route check opens in the bottom sheet."""
     ctx = browser.new_context(viewport={"width": 780, "height": 1688}, color_scheme="dark", reduced_motion="no-preference", has_touch=True)
     ctx.add_init_script(CURSOR_JS)
-    page = ctx.new_page()
+    if SLOW != 1.0:
+        ctx.add_init_script(SLOW_JS.replace("__RATE__", str(SLOW)))
+    page = slow_page(ctx.new_page(), SLOW)
     url = f"{BASE}/?demo=us-emerging&video=2"
     page.goto(url, wait_until="networkidle"); page.wait_for_timeout(9000)  # pre-warm (unfilmed)
     page.goto(f"{BASE}/?video=2", wait_until="networkidle")
     tk = Take(ctx, page, "phone")
     tk.start()
     page.goto(url, wait_until="domcontentloaded")
-    page.wait_for_selector("[role=dialog][aria-label='Ask the scout'] article[data-latest]", timeout=60000)
+    page.wait_for_selector("[role=region][aria-label='Agent route check'], [role=dialog][aria-label='Ask the scout'] article[data-latest]", timeout=60000)
     tk.mark("sheet")
     page.wait_for_timeout(3500)
-    tk.qa("sheet", ["[role=dialog]"])
+    tk.qa("sheet", ["[aria-label='Agent route check']"])
     tk.stop()
     ctx.close()
 
@@ -456,6 +506,11 @@ def take_sponsor(browser):
     ctx, page = context(browser)
     demo_done(page)
     page.mouse.move(2500, 1300)
+    # No third-party trademarks on film: the brand names and film titles are blurred (the labels stay readable).
+    page.evaluate("""() => { const st = document.createElement('style'); st.textContent = '.__tm{filter:blur(9px)}'; document.head.appendChild(st);
+      const card = [...document.querySelectorAll('p')].find((p) => /^Sponsor match/i.test(p.textContent.trim()));
+      card?.nextElementSibling?.classList.add('__tm');
+      [...document.querySelectorAll('p')].filter((p) => /^Also into/.test(p.textContent.trim())).forEach((p) => p.nextElementSibling?.classList.add('__tm')); }""")
     tk = Take(ctx, page, "sponsor")
     tk.start()
     page.wait_for_timeout(400)

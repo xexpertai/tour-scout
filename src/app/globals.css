@@ -11,6 +11,8 @@
   --accent: #ff6b1a;
   --accent-ink: #0b0b0f;
   --neon: #ff2e88;
+  /* Text on neon: dark on the bright dark-theme pink (white there is only 3.2:1). */
+  --neon-ink: #0b0b0f;
   --glow: #ff6b1a;
   --qloo: #4fe3a5;
   --qloo-bg: #11291f;
@@ -21,7 +23,7 @@
   --sample: #ffc861;
   --sample-bg: #33270f;
   --danger: #ff8a7a;
-  --map-bg: rgb(12, 12, 12);
+  --map-bg: #17171c;
   color-scheme: dark;
 }
 
@@ -36,6 +38,7 @@
   --accent: #b54200;
   --accent-ink: #ffffff;
   --neon: #c8006a;
+  --neon-ink: #ffffff;
   --glow: #ff6b1a;
   --qloo: #0f7a52;
   --qloo-bg: #d9f2e6;
@@ -60,6 +63,7 @@
   --color-accent: var(--accent);
   --color-accent-ink: var(--accent-ink);
   --color-neon: var(--neon);
+  --color-neon-ink: var(--neon-ink);
   --color-qloo: var(--qloo);
   --color-qloo-bg: var(--qloo-bg);
   --color-ai: var(--ai);
@@ -84,10 +88,12 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Poster grain: a faint noise so flat colour reads as printed paper. */
+/* Poster grain: a faint noise so flat colour reads as printed paper. It covers the whole app root (not
+   just the first viewport), so a long page or a full-page capture has no seam at the first screen's height. */
+.grain { position: relative; }
 .grain::before {
   content: "";
-  position: fixed;
+  position: absolute;
   inset: 0;
   pointer-events: none;
   opacity: 0.05;
@@ -131,13 +137,18 @@ body {
 .cand-name { font-size: 13px; font-weight: 600; color: var(--ink); text-shadow: 0 0 5px var(--bg), 0 0 2px var(--bg), 0 0 1px var(--bg); }
 /* A winning city's score label clears at once, before its stop label appears (no doubled names). */
 .cand.won .mk { opacity: 0 !important; transition: opacity .12s ease 0ms; }
-.cand.lost .mk { opacity: .5; }
+/* Labels sit on a map-coloured pill, so a basemap place name underneath never shows through (no doubled names). */
+.cand .lbl, .ghost .cand-name { background: color-mix(in srgb, var(--map-bg) 88%, transparent); padding: 1px 6px; border-radius: 6px; }
+.cand.lost .mk { opacity: 1; }
+.cand.lost .cand-dot { opacity: .5; }
 .cand.lost .cand-dot { inset: 3px; background: var(--muted); box-shadow: none; }
 .cand.lost .cand-score { font-size: 14px; color: var(--muted); }
 .cand.lost .cand-name { color: var(--muted); }
 .stop .mk { position: relative; width: 34px; height: 34px; opacity: 0; transform: scale(.5); transition: opacity .3s ease var(--delay, 0ms), transform .45s cubic-bezier(.3,1.6,.5,1) var(--delay, 0ms); }
 .stop.on .mk { opacity: 1; transform: none; }
-.stop.removed .mk { opacity: .35; filter: grayscale(1); }
+/* A stop a proposal drops: the pin fades, its label stays solid on a pill so basemap names never show through. */
+.stop.removed .stop-pin { opacity: .35; filter: grayscale(1); }
+.stop.removed .stop-name { color: var(--muted); background: color-mix(in srgb, var(--map-bg) 88%, transparent); padding: 0 6px; border-radius: 6px; text-decoration: line-through; text-decoration-thickness: 2px; }
 .stop-name { font-family: var(--font-display); font-size: 19px; letter-spacing: .01em; text-transform: uppercase; color: var(--ink); text-shadow: 0 0 8px var(--bg), 0 0 3px var(--bg), 0 0 1px var(--bg); pointer-events: none; }
 .stop-pin {
   position: absolute; inset: 0; display: grid; place-items: center; border-radius: 999px; cursor: pointer;
@@ -147,8 +158,9 @@ body {
 /* 44 px hit area around the 34 px pin. */
 .stop-pin::after { content: ""; position: absolute; inset: -5px; }
 .stop.active .stop-pin { background: var(--neon); box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px var(--neon), 0 0 22px var(--neon); }
-.ghost .mk { display: flex; align-items: center; gap: 6px; cursor: pointer; }
-.ghost-ring { width: 20px; height: 20px; border-radius: 999px; border: 2px dashed var(--neon); background: color-mix(in srgb, var(--neon) 15%, transparent); }
+/* A ghost is its ring alone, anchored on the city; its label is placed around it like any other. */
+.ghost .mk { position: relative; width: 20px; height: 20px; cursor: pointer; }
+.ghost-ring { position: absolute; inset: 0; width: 20px; height: 20px; border-radius: 999px; border: 2px dashed var(--neon); background: color-mix(in srgb, var(--neon) 15%, transparent); }
 .ghost-ring.new { border-color: #ffd2b0; animation: pulse-ring 1.4s ease-in-out infinite; }
 @keyframes pulse-ring { 50% { transform: scale(1.35); } }
 .map-caption {

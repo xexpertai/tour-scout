@@ -1,7 +1,7 @@
 {
   "_meta": {
     "voice": "af_heart",
-    "note": "Story video v4 (docs/VIDEO_STORYBOARD.md). 'at' = voice start in seconds.",
+    "note": "Story video v8. 'at' = voice start in seconds. v8 re-voiced only the 'agent' line (Kokoro af_heart, PyTorch) and spliced it into the v7 mix.",
     "say": "'say' is what the voice reads when it differs from the caption: Qloo is pronounced \"clue\"."
   },
   "lines": [
@@ -49,8 +49,8 @@
     },
     {
       "id": "agent",
-      "text": "Then an agent checks the plan with Qloo tools. It finds a stronger city that still drives: Washington, D.C. over Albany. Apply, and the route redraws.",
-      "say": "Then an agent checks the plan with Clue tools. It finds a stronger city that still drives: Washington, D.C. over Albany. Apply, and the route redraws.",
+      "text": "Then an agent checks the plan with Qloo tools. It finds a stronger city that's also a shorter drive: Providence over Albany. Apply, and the route redraws.",
+      "say": "Then an agent checks the plan with Clue tools. It finds a stronger city that's also a shorter drive: Providence over Albany. Apply, and the route redraws.",
       "at": 37.0
     },
     {

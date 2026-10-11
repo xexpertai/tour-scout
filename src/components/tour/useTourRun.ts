@@ -4,7 +4,9 @@ import { useCallback, useRef, useState } from "react";
 import type { Insight } from "@/lib/guard";
 import type { Source } from "@/lib/evidence";
 import type { CapturedRun } from "@/lib/tour/presets";
-import { editedOrigin, type RunOrigin } from "@/lib/tour/source-label";
+import { editedOrigin, planOrigin, type RunOrigin } from "@/lib/tour/source-label";
+import { addCheck, settle, verdictCheck, type ScoutCheck } from "@/lib/tour/trace";
+export type { ScoutCheck };
 import type { AskEvent, City, Coverage, FanProfile, FollowUp, StopData, TourEvent, TourInput, TourPlan } from "@/lib/tour/types";
 
 export type StopView = StopData & { order?: number; why?: Insight; pitch?: Insight; textDone?: boolean };
@@ -30,24 +32,15 @@ export type RunState = {
   recordedScout?: NonNullable<CapturedRun["scout"]>;
   /** Indexes of follow-ups that came from a recorded exchange (applied through the preset). */
   replayedAnswers?: number[];
-  /** The scout's live progress while answering a question or applying a change. */
-  scout: { busy: boolean; checks: ScoutCheck[] };
+  /**
+   * Set when a question or an Apply saved this visitor's work as a new plan (a copy): both links, so the
+   * page can say the original is unchanged. Paths, e.g. "/t/<id>" or "/?demo=<slug>".
+   */
+  copy?: { original: string; copy: string; via: "question" | "apply" };
+  /** The scout's live progress while answering a question or applying a change; `seen` counts its Qloo requests so far. */
+  scout: { busy: boolean; checks: ScoutCheck[]; seen?: number };
 };
 
-export type ScoutCheck = { label: string; detail?: string; status: "running" | "done" | "failed" };
-
-/** "checking" opens a running step; the next Qloo result closes the oldest open one. */
-function addCheck(checks: ScoutCheck[], e: { type: "checking" | "step"; label: string; failed?: boolean }): ScoutCheck[] {
-  if (e.type === "checking") return [...checks, { label: e.label.replace(/^Scout is /, "").replace(/…$/, ""), status: "running" }];
-  // Tool results arrive out of order when the agent runs tools in parallel: pair a result with the
-  // running check that names the same place ("looking for openers in Boston" ↔ "Boston: openers …").
-  const place = e.label.split(":")[0].trim().toLowerCase();
-  const named = checks.findIndex((c) => c.status === "running" && place.length > 2 && c.label.toLowerCase().includes(place));
-  const open = named >= 0 ? named : checks.findIndex((c) => c.status === "running");
-  if (open < 0) return [...checks, { label: e.label, status: e.failed ? "failed" : "done" }];
-  return checks.map((c, i) => (i === open ? { ...c, detail: e.label, status: e.failed ? "failed" : "done" } : c));
-}
-const settle = (checks: ScoutCheck[]): ScoutCheck[] => checks.map((c) => (c.status === "running" ? { ...c, status: "done" } : c));
 
 const initial: RunState = { status: "idle", steps: [], sources: [], cities: [], stops: [], followUps: [], scout: { busy: false, checks: [] } };
 
@@ -56,7 +49,8 @@ function fromPlan(plan: TourPlan): RunState {
   return {
     ...initial,
     status: "done",
-    origin: { kind: "shared", createdAt: plan.createdAt },
+    // From the plan itself, so the owner and every other visitor of a share link read the same line.
+    origin: planOrigin(plan),
     qloo: plan.mode.qloo === "cached" ? "live" : plan.mode.qloo,
     llm: plan.mode.llm,
     plan,
@@ -110,6 +104,11 @@ function reduce(state: RunState, event: TourEvent): RunState {
     case "error":
       return { ...state, status: "error", error: event };
   }
+}
+
+/** The address of the demo on screen ("/?demo=<slug>"). */
+function currentPath(): string {
+  try { return `${window.location.pathname}${window.location.search}`; } catch { return "/"; }
 }
 
 /** Reads an NDJSON response, calling `onEvent` per line; returns an error message, if any. */
@@ -213,52 +212,60 @@ export function useTourRun(sharedPlan?: TourPlan) {
         clock += wait;
         const e = event as AskEvent;
         setState((s) => {
-          if (e.type === "checking" || e.type === "step") return { ...s, scout: { busy: true, checks: addCheck(s.scout.checks, e) } };
-          if (e.type === "source") return { ...s, sources: [...s.sources, e.source] };
+          if (e.type === "checking" || e.type === "step") return { ...s, scout: { ...s.scout, busy: true, checks: addCheck(s.scout.checks, e, s.scout.seen) } };
+          if (e.type === "source") return { ...s, sources: [...s.sources, e.source], scout: { ...s.scout, seen: (s.scout.seen ?? 0) + 1 } };
           if (e.type === "answer") {
             return {
               ...s,
               followUps: [...s.followUps, e.followUp],
               replayedAnswers: [...(s.replayedAnswers ?? []), s.followUps.length],
-              scout: { busy: true, checks: [...settle(s.scout.checks), { label: e.followUp.proposal ? `proposed: ${e.followUp.proposal.summary}` : "answered", status: "done" }] },
+              scout: { ...s.scout, busy: true, checks: [...settle(s.scout.checks), verdictCheck(e.followUp)] },
             };
           }
           return s;
         });
       }
-      setState((s) => ({ ...s, scout: { busy: false, checks: settle(s.scout.checks) } }));
+      setState((s) => ({ ...s, scout: { ...s.scout, busy: false, checks: settle(s.scout.checks) } }));
       return undefined;
     }
     const body = state.origin?.kind === "preset" ? { preset: state.origin.slug, question } : { planId: plan.id, question };
+    // The link to what the question is asked about: the demo, or the stored plan (/t/<id>).
+    const originalLink = state.origin?.kind === "preset" ? currentPath() : `/t/${plan.id}`;
     setState((s) => ({ ...s, scout: { busy: true, checks: [] } }));
     let error: string | undefined;
     try {
       const res = await fetch("/api/tour/ask", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-      error = await readStream<AskEvent>(res, (e) => setState((s) => {
+      error = await readStream<AskEvent>(res, (e) => {
+        // The demo (or someone else's shared plan) was copied so this visitor's answers live on their own
+        // plan: the address bar follows the copy, and the page names both links (the original is unchanged).
+        // Side effects stay outside the state updater (React may run an updater twice).
+        const copy = e.type === "forked" ? { original: originalLink, copy: `/t/${e.planId}`, via: "question" as const } : undefined;
+        if (copy) { try { window.history.replaceState(null, "", copy.copy); } catch { /* the copy still works */ } }
+        setState((s) => {
         switch (e.type) {
           case "forked":
-            // The demo was copied into storage so its answers can be applied and shared; the scout runs live.
-            return { ...s, origin: editedOrigin(s.origin, true), plan: s.plan && { ...s.plan, id: e.planId } };
+            return { ...s, copy, origin: editedOrigin(s.origin, false, true), plan: s.plan && { ...s.plan, id: e.planId } };
           case "checking":
           case "step":
-            return { ...s, scout: { busy: true, checks: addCheck(s.scout.checks, e) } };
+            return { ...s, scout: { ...s.scout, busy: true, checks: addCheck(s.scout.checks, e, s.scout.seen) } };
           case "source":
-            return { ...s, sources: [...s.sources, e.source] };
+            return { ...s, sources: [...s.sources, e.source], scout: { ...s.scout, seen: (s.scout.seen ?? 0) + 1 } };
           case "answer":
             return {
               ...s,
               followUps: [...s.followUps, e.followUp],
-              scout: { busy: true, checks: [...settle(s.scout.checks), { label: e.followUp.proposal ? `proposed: ${e.followUp.proposal.summary}` : "answered", status: "done" }] },
+              scout: { ...s.scout, busy: true, checks: [...settle(s.scout.checks), verdictCheck(e.followUp)] },
             };
           case "error":
             error = e.message;
             return s;
         }
-      }));
+        });
+      });
     } catch (e) {
       error = (e as Error).message;
     }
-    setState((s) => ({ ...s, scout: { busy: false, checks: settle(s.scout.checks) } }));
+    setState((s) => ({ ...s, scout: { ...s.scout, busy: false, checks: settle(s.scout.checks) } }));
     return error;
   }, [state.plan, state.origin, state.recordedScout]);
 
@@ -268,24 +275,33 @@ export function useTourRun(sharedPlan?: TourPlan) {
     if (!plan) return "No plan to change.";
     setState((s) => ({ ...s, scout: { busy: true, checks: [] } }));
     let error: string | undefined;
-    let liveSources = 0; // new Qloo evidence while applying means the change made live calls
+    let liveSources = 0; // new (non-sample) Qloo evidence while applying means the change made live calls
     try {
       // A recorded preset answer is applied through the preset (the server holds the same recording).
       const replayed = state.origin?.kind === "preset" && state.replayedAnswers?.includes(index);
       const body = replayed && state.origin?.kind === "preset" ? { preset: state.origin.slug, question: state.followUps[index]?.question } : { planId: plan.id, index };
+      const originalLink = state.origin?.kind === "preset" ? currentPath() : `/t/${plan.id}`;
       const res = await fetch("/api/tour/apply", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-      error = await readStream<TourEvent>(res, (e) => setState((s) => {
-        if (e.type === "step") return { ...s, scout: { busy: true, checks: addCheck(s.scout.checks, e) } };
-        if (e.type === "source") { liveSources++; return { ...s, sources: [...s.sources, e.source] }; }
-        // A captured plan stays labelled as captured, with the scout change stated (not "live data").
-        if (e.type === "plan") return { ...fromPlan(e.plan), origin: editedOrigin(s.origin, liveSources > 0), scout: { busy: false, checks: [] } };
-        if (e.type === "error") error = e.message;
-        return s;
-      }));
+      error = await readStream<TourEvent>(res, (e) => {
+        if (e.type === "source" && e.source.call.surface !== "mock") liveSources++; // sample calls are not live data
+        // The applied plan is a new, saved plan: the address bar follows it, so reload, back and a copied URL
+        // keep the change, and the page names both links (the plan the change was applied to is unchanged).
+        const copy = e.type === "plan" ? { original: originalLink, copy: `/t/${e.plan.id}`, via: "apply" as const } : undefined;
+        if (copy) { try { window.history.replaceState(null, "", copy.copy); } catch { /* the plan still shows */ } }
+        const live = liveSources > 0;
+        setState((s) => {
+          if (e.type === "step") return { ...s, scout: { busy: true, checks: addCheck(s.scout.checks, e) } };
+          if (e.type === "source") return { ...s, sources: [...s.sources, e.source] };
+          // A captured plan stays labelled as captured, with the scout change stated (not "live data").
+          if (e.type === "plan") return { ...fromPlan(e.plan), copy, origin: editedOrigin(s.origin, live), scout: { busy: false, checks: [] } };
+          if (e.type === "error") error = e.message;
+          return s;
+        });
+      });
     } catch (e) {
       error = (e as Error).message;
     }
-    setState((s) => ({ ...s, scout: { busy: false, checks: settle(s.scout.checks) } }));
+    setState((s) => ({ ...s, scout: { ...s.scout, busy: false, checks: settle(s.scout.checks) } }));
     return error;
   }, [state.plan, state.origin, state.replayedAnswers, state.followUps]);
 

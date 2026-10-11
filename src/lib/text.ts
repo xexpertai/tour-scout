@@ -21,6 +21,13 @@ export function venueTown(v: { town?: string; address?: string }): string | unde
 /** Qloo tag names occasionally carry stray capitals ("DedicateD"); tidy only that pattern. */
 export const tidyTag = (name: string) => name.trim().replace(/\b([A-Z]?[a-z]{2,})([A-Z])\b/g, (_, a: string, b: string) => a + b.toLowerCase());
 
+/**
+ * Qloo's taste-tag families include a few occupation labels ("Actors"): they say what people do, not
+ * what an audience likes, so they are never shown as a shared taste. Applied to stored plans too.
+ */
+const OCCUPATION = /^(actors?|actress(?:es)?)$/i;
+export const isTasteName = (name: string) => !OCCUPATION.test(name.trim());
+
 /** "Big Thief" → "Big Thief's", "Phoebe Bridgers" → "Phoebe Bridgers'". */
 export function possessive(name: string): string {
   const n = clean(name);

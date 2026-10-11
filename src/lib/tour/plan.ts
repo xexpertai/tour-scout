@@ -5,7 +5,7 @@
 import { venueTown } from "../text.ts";
 import { randomUUID } from "node:crypto";
 import { Channel } from "../evidence.ts";
-import { insightGuard } from "../guard.ts";
+import { insightGuard, type GuardOpts } from "../guard.ts";
 import { MARKETS } from "../markets.ts";
 import { LlmError, llmStatus, scriptedProvider, synthesisProvider, type RawSynthesis, type SynthesisInput, type SynthesisProvider } from "../llm.ts";
 import { QlooError, qlooMode } from "../qloo.ts";
@@ -110,6 +110,7 @@ export function synthesisInput(input: TourInput, a: PhaseAResult, arenaScale: bo
       opener: s.opener?.name, openerEvidence: s.opener?.evidence,
       shared: s.opener?.overlap?.shared, sharedEvidence: s.opener?.overlap?.evidence,
     })),
+    route: { order: routeOrder(a.stops, a.coverage?.regional?.start).map((s) => s.city.name), weakest: a.stops.length ? [...a.stops].sort((x, y) => x.city.affinity - y.city.affinity)[0].city.name : undefined },
   };
 }
 
@@ -131,7 +132,23 @@ export const guardOptsOf = (input: TourInput, a: Pick<PhaseAResult, "stops" | "c
   actName: input.artist?.name ?? input.emerging?.name, emerging: !input.artist,
   hotspotCities: a.stops.filter((s) => s.city.hotspot).map((s) => clean(s.city.name)),
   cityRanks: Object.fromEntries(a.stops.map((s) => [clean(s.city.name), rankIn(a as never, s.city.name).rank ?? 0])),
+  venues: venueNames(a.stops),
+  ...routeFacts(routeOrder(a.stops, a.coverage?.regional?.start)),
+  rankOf: (a.cities?.length || a.stops.length), weakest: weakestName(a.stops),
 });
+
+/** The stop with the lowest room affinity on the route. */
+export const weakestName = (stops: { city: { name: string; affinity: number } }[]) =>
+  stops.length ? clean([...stops].sort((x, y) => x.city.affinity - y.city.affinity)[0].city.name) : undefined;
+
+/** The route's two ends and its stop names, in route order (for the guard's span and "every stop" rules). */
+export const routeFacts = (ordered: { city: { name: string } }[]) => (ordered.length > 1
+  ? { routeEnds: [clean(ordered[0].city.name), clean(ordered.at(-1)!.city.name)] as [string, string], stopNames: ordered.map((s) => clean(s.city.name)) }
+  : {});
+
+/** Every room name on the plan (stop venues and the rooms behind each city's score). */
+export const venueNames = (stops: { venues?: { name: string }[]; city: { rooms?: { name: string }[] } }[]) =>
+  [...new Set(stops.flatMap((s) => [...(s.venues ?? []), ...(s.city.rooms ?? [])].map((v) => v.name)))];
 
 export function assemblePlan(input: TourInput, a: PhaseAResult, raw: RawSynthesis, meta: { qloo: "live" | "mock"; llm: string; arenaScale: boolean; phaseAMs: number; synthesisMs: number; totalMs: number }, template?: RawSynthesis): TourPlan {
   const templateSummary = template?.summary;
@@ -255,3 +272,16 @@ export async function* planTour(input: TourInput, signal?: AbortSignal, provider
       await scriptedProvider.synthesize(sInput)),
   };
 }
+
+/** The guard's facts for a finished plan (its route order, ranks among its candidates, hotspots, rooms). */
+export function planGuardOpts(plan: TourPlan): GuardOpts {
+  const ordered = [...plan.stops].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const cities = plan.candidates ?? plan.stops.map((s) => s.city);
+  return {
+    capacity: plan.inputs.capacity, actName: plan.artist.name, emerging: Boolean(plan.artist.proxyOf?.length),
+    hotspotCities: plan.stops.filter((s) => s.city.hotspot).map((s) => clean(s.city.name)), venues: venueNames(plan.stops),
+    cityRanks: Object.fromEntries(plan.stops.map((s) => [clean(s.city.name), rankIn({ cities, stops: [] }, s.city.name).rank ?? 0])),
+    ...routeFacts(ordered), rankOf: cities.length, weakest: weakestName(plan.stops),
+  };
+}
+

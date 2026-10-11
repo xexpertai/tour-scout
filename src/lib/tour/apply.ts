@@ -5,13 +5,14 @@
  */
 import { randomUUID } from "node:crypto";
 import { EvidenceLedger } from "../evidence.ts";
-import { insightGuard, type Insight } from "../guard.ts";
+import { insightGuard, planClaims, unsupportedClaim, type Insight } from "../guard.ts";
 import { scriptedProvider } from "../llm.ts";
 import { QlooError } from "../qloo.ts";
 import { clean, possessive } from "../text.ts";
+import { changeText } from "./source-label.ts";
 import { distanceKm } from "../markets.ts";
 import { SMALL_ROOM_POPULARITY, makeStepper, scoutStop, venueTagFor, type StepSink } from "./pipeline.ts";
-import { rankIn, routeOrder, synthesisInput } from "./plan.ts";
+import { planGuardOpts, rankIn, routeOrder, synthesisInput } from "./plan.ts";
 import type { StopData, TourInput, TourPlan, TourStop } from "./types.ts";
 
 const escape = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -79,8 +80,9 @@ export async function applyProposal(plan: TourPlan, followUpIndex: number, out: 
     let text = i.text.replace(new RegExp(`(${escape(clean(city))} ranks )#\\d+`, "g"), `$1#${rank}`);
     if (rank > 3) {
       const c = escape(clean(city));
-      text = text.replace(new RegExp(`ranks ${c} among the strongest cities for`, "g"), `shows a strong fit in ${clean(city)} for`)
-        .replace(new RegExp(`${c} ranks among the strongest cities for this audience`, "g"), `${clean(city)} is a strong fit for this audience`);
+      const of = allCities.length;
+      text = text.replace(new RegExp(`ranks ${c} among the strongest cities for`, "g"), `ranks ${clean(city)} #${rank} of ${of} scored cities for`)
+        .replace(new RegExp(`${c} ranks among the strongest cities for this audience`, "g"), `${clean(city)} ranks #${rank} of ${of} scored cities for this audience`);
     }
     return text === i.text ? i : { ...i, text };
   };
@@ -89,10 +91,12 @@ export async function applyProposal(plan: TourPlan, followUpIndex: number, out: 
   const legKm = ordered.slice(1).map((s, i) => (s.city.lat !== undefined && ordered[i].city.lat !== undefined
     ? distanceKm({ lat: ordered[i].city.lat!, lng: ordered[i].city.lng! }, { lat: s.city.lat, lng: s.city.lng! }) : 0));
   const id = randomUUID();
-  return {
+  const next: TourPlan = {
     ...plan,
     id,
     parentId: plan.id,
+    // Sample (no-key) calls are not live Qloo data.
+    appliedLive: Boolean(plan.appliedLive) || ledger.sources.some((x) => x.call.surface !== "mock"),
     createdAt: new Date().toISOString(),
     stops: ordered.map((s, i) => ({ ...s, order: i + 1, rank: i + 1 })),
     // Added cities join the ranked list, so every stop still shows its rank among scored cities.
@@ -116,7 +120,31 @@ export async function applyProposal(plan: TourPlan, followUpIndex: number, out: 
     merch: plan.merch?.filter((i) => !stale(i.text)),
     risks: plan.risks?.filter((i) => !stale(i.text)),
   };
+  return recheckKeptText(next, diff.summary);
+}
+
+/**
+ * Model text kept from the parent plan is checked again against the NEW plan's facts (its route ends,
+ * which stops are near a hotspot, ranks among the new candidates): a summary that no longer holds
+ * ("from Boston to Philadelphia… all near Qloo fan hotspots" after Providence joins) becomes the
+ * code-written one, and idea lines that no longer hold are dropped.
+ */
+export function recheckKeptText(next: TourPlan, change: string): TourPlan {
+  const o = planGuardOpts(next);
+  const fails = (field: string, i: Insight) => i.kind !== "template" && Boolean(unsupportedClaim(i.text) ?? planClaims(field, i.text, o));
+  const ordered = [...next.stops].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  return {
+    ...next,
+    summary: next.summary && fails("summary", next.summary) ? {
+      text: `Route updated by the scout (${change}). Stops in order: ${ordered.map((s) => `${clean(s.city.name)} (${(Math.round(s.city.affinity * 1000) / 10).toFixed(1)})`).join(", ")}.`,
+      evidence: [...new Set(ordered.map((s) => s.city.evidence))],
+      kind: "template",
+    } : next.summary,
+    theme: next.theme?.filter((i) => !fails("theme", i)),
+    merch: next.merch?.filter((i) => !fails("merch", i)),
+    risks: next.risks?.filter((i) => !fails("risks", i)),
+  };
 }
 
 /** One-line label for the stream while applying. */
-export const applyingLabel = (plan: TourPlan, summary: string) => `Rebuilding ${possessive(plan.artist.name)} route: ${summary}`;
+export const applyingLabel = (plan: TourPlan, summary: string) => `Rebuilding ${possessive(plan.artist.name)} route: ${summary ? changeText(summary) : "the proposed change"}`;

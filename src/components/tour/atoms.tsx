@@ -217,3 +217,11 @@ export function ThemeToggle() {
     </button>
   );
 }
+
+const noSubscribe = () => () => {};
+/** The feedback link set by the server (FEEDBACK_URL, see layout.tsx); undefined hides every feedback link. */
+export function useFeedbackUrl(): string | undefined {
+  return useSyncExternalStore(noSubscribe,
+    () => document.querySelector<HTMLMetaElement>('meta[name="tour-scout-feedback"]')?.content || undefined,
+    () => undefined);
+}

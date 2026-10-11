@@ -18,7 +18,8 @@ ENV NODE_ENV=production \
     QLOO_BASE_URL=https://hackathon.api.qloo.com \
     QLOO_TRUSTED_BASE_URL=https://hackathon.api.qloo.com \
     LLM_PROVIDER=claude
-# The app spawns `qloo exec` / `qloo api`; pin the harness version the adapters were verified against.
+# The app runs `qloo exec` / `qloo setup --status` through this package's own entry points, in-process
+# (spawning the `qloo` binary is the fallback); pin the harness version the adapters were verified against.
 RUN npm install --global @qloo/qloo-harness@0.1.26 && npm cache clean --force && qloo --version
 WORKDIR /app
 COPY --from=build /app/.next/standalone ./

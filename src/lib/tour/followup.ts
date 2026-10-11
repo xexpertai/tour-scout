@@ -17,6 +17,14 @@ const clean = (s: string) => s.replace(/\s*\(sample\)$/, "");
 const score = (n?: number) => (n === undefined ? "n/a" : (Math.round(n * 1000) / 10).toFixed(1));
 const sameCity = (a: string, b: string) => clean(a).toLowerCase() === clean(b).toLowerCase();
 
+/**
+ * "Why not Denver?", "What about Portland, ME?", "how about portland, maine": one place name, with
+ * at most one ", region" part, takes the fast deterministic path (no model call); anything else goes
+ * to the scout. The app's own suggestion ("Why not Portland, ME?") must match.
+ */
+const QUICK = /^\s*(?:why\s+not|what\s+about|how\s+about)\s+([\p{L} .'-]{2,40}?(?:,\s*[\p{L} .'-]{2,20}?)?)\s*\??\s*$/iu;
+export const isQuickQuestion = (question: string) => QUICK.test(question);
+
 /** Pulls the city out of phrasings like "why not Chicago?" or "what about Austin". */
 export function cityFromQuestion(question: string): string {
   return question

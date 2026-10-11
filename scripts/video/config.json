@@ -2,5 +2,5 @@
   "_note": "End-card links. Leave empty while unapproved: the draft then omits those rows. FINAL=1 scripts/video/make-draft.sh refuses to render unless both are set.",
   "builtBy": "Harsha Shinde · xexpertai",
   "demoUrl": "https://tour-scout-196979752200.us-central1.run.app",
-  "repoUrl": ""
+  "repoUrl": "https://github.com/xexpertai/tour-scout"
 }

@@ -1,0 +1,84 @@
+{
+ "act": "S.G. Goodman",
+ "window": "2023-10..2027-02",
+ "sources": [
+  {
+   "url": "https://web.archive.org/web/20240420051312/https://www.setlist.fm/setlists/sg-goodman-2bf57846.html",
+   "retrieved": "2026-10-11",
+   "note": "setlist.fm artist page 1 (the 10 most recent setlists as of 20 Apr 2024), Internet Archive snapshot. Excluded: Mission Creek Festival 2024 (no city on the page) and the WFPK 91.9 FM radio session (not a show)."
+  },
+  {
+   "url": "https://cdn.seated.com/api/tour/0d0aa498-2b05-42f8-a28f-b8ceab9231a0?include=tour-events",
+   "retrieved": "2026-10-11",
+   "note": "Seated tour feed behind the official tour page sggoodman.net/tour: upcoming dates as of 11 Oct 2026."
+  }
+ ],
+ "shows": [
+  {
+   "date": "2023-10-28",
+   "city": "Washington, DC",
+   "venue": "Union Stage",
+   "source": 0
+  },
+  {
+   "date": "2023-10-29",
+   "city": "Baltimore",
+   "venue": "Metro Baltimore",
+   "source": 0
+  },
+  {
+   "date": "2023-11-01",
+   "city": "Philadelphia",
+   "venue": "The Black Box at Underground Arts",
+   "source": 0
+  },
+  {
+   "date": "2023-11-04",
+   "city": "Cambridge, MA",
+   "venue": "The Sinclair",
+   "lat": 42.3736,
+   "lng": -71.1097,
+   "source": 0
+  },
+  {
+   "date": "2023-11-07",
+   "city": "Toronto",
+   "venue": "The Drake Underground",
+   "lat": 43.6532,
+   "lng": -79.3832,
+   "source": 0
+  },
+  {
+   "date": "2023-11-08",
+   "city": "Pittsburgh",
+   "venue": "Thunderbird Cafe and Music Hall",
+   "source": 0
+  },
+  {
+   "date": "2023-11-12",
+   "city": "Cleveland",
+   "venue": "Beachland Ballroom and Tavern",
+   "source": 0
+  },
+  {
+   "date": "2023-11-17",
+   "city": "Louisville",
+   "venue": "Headliners",
+   "source": 0
+  },
+  {
+   "date": "2026-11-10",
+   "city": "Fort Collins, CO",
+   "venue": "The Armory",
+   "lat": 40.5853,
+   "lng": -105.0844,
+   "source": 1
+  },
+  {
+   "date": "2027-02-26",
+   "city": "Miami",
+   "venue": "Cayamo Cruise",
+   "source": 1
+  }
+ ]
+}

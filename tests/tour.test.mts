@@ -352,3 +352,196 @@ test("a comedian's rooms lead with comedy clubs", async () => {
   for (const n of ["Comedy Cellar", "Laugh Boston", "Helium Comedy Club", "Stand Up NY", "Punch Line Philly", "Improv Asylum"]) assert.match(n, COMEDY_ROOM);
   for (const n of ["Littlefield", "Union Hall", "The Bell House", "Parkside Lounge"]) assert.doesNotMatch(n, COMEDY_ROOM);
 });
+
+test("a strong city left off the route says why: outside this run, with the distance (every preset)", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { PRESETS } = await import("../src/lib/tour/presets.ts");
+  const { offRouteCities, offRouteText } = await import("../src/lib/tour/coverage-text.ts");
+  const found: Record<string, string[]> = {};
+  for (const p of PRESETS) {
+    const run = JSON.parse(readFileSync(new URL(`../public/presets/${p.slug}.json`, import.meta.url), "utf8"));
+    const cities = run.events.filter((e: any) => e.event.type === "cities").at(-1).event.cities;
+    const plan = run.events.find((e: any) => e.event.type === "plan").event.plan;
+    const stops = new Set(plan.stops.map((s: any) => s.city.name));
+    const off = offRouteCities(cities, (c) => stops.has(c.name));
+    found[p.slug] = off.map((o) => o.name);
+    for (const o of off) assert.ok(o.roadKm > 400 && !stops.has(o.name), JSON.stringify(o));
+    if (off.length) assert.doesNotMatch(offRouteText(off), /\s[.,;:)]|\(\s|\s{2,}|\.\./);
+  }
+  // Joe List: Austin ranks #2 by room affinity but is a ~2,800 km drive from the New York run.
+  assert.deepEqual(found["us-comedian"], ["Austin"]);
+  assert.match(offRouteText([{ name: "Austin", roadKm: 2800, nearest: "Washington, DC" }]), /^Austin \(about 2,800 km by road from Washington, DC\) scores well but is too far from this route to drive between shows, so it is left for a separate run\.$/);
+});
+
+test("the proposed change reads as words: swap, add or drop", async () => {
+  const { changeText } = await import("../src/lib/tour/source-label.ts");
+  assert.equal(changeText("+ Washington, DC (92.1) · − Albany (88.7)"), "Swap Albany (88.7) → Washington, DC (92.1)");
+  assert.equal(changeText("+ Charlotte (92.0)"), "Add Charlotte (92.0)");
+  assert.equal(changeText("− Albany (88.7)"), "Drop Albany (88.7)");
+  assert.equal(changeText("opener → Hop Along"), "Opener → Hop Along");
+  const { slimChange } = await import("../src/lib/tour/source-label.ts");
+  assert.equal(slimChange("Swap Albany (88.7) → Providence (91.3)"), "Albany → Providence (91.3)", "one line names both cities");
+  assert.equal(slimChange("Swap Indianapolis (89.0) → Charlotte (92.0); support slot with → Tomberlin"), "Indianapolis → Charlotte (92.0); support slot with → Tomberlin");
+  assert.equal(changeText("+ Charlotte (92.0) · − Indianapolis (89.0) · support slot with → Tomberlin"), "Swap Indianapolis (89.0) → Charlotte (92.0); support slot with → Tomberlin");
+});
+
+test("who chose the route check's Qloo calls matches Credits: server pre-check vs agent", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { agentCallsNote } = await import("../src/lib/tour/source-label.ts");
+  const run = JSON.parse(readFileSync(new URL("../public/presets/us-emerging.json", import.meta.url), "utf8"));
+  const f = run.scout.events.find((e: any) => e.event.type === "answer").event.followUp;
+  assert.equal(f.sources.length, 15);
+  assert.equal(agentCallsNote(f), "The server ran 7 standard checks first (the nearby cities' rooms); the agent chose 8 more Qloo requests. The verdict sentence is written by code from their numbers, so it can’t overstate them.");
+  assert.equal(agentCallsNote({ sources: [1, 2], answer: { kind: "interpretation" } }), "The agent chose these 2 Qloo requests.");
+});
+
+test("the route check answers the opener half: which stops it looked up, and that the size flags stay", async () => {
+  const { readFileSync } = await import("node:fs");
+  const run = JSON.parse(readFileSync(new URL("../public/presets/us-comedian.json", import.meta.url), "utf8"));
+  const f = run.scout.events.find((e: any) => e.event.type === "answer").event.followUp;
+  assert.ok(f.checks.some((c: any) => /^Feature acts: the check looked up Qloo's similar acts for Washington, DC, Providence, Philadelphia, Boston and New York and proposes no change, so the "above your size fit" flags on Washington, DC, Philadelphia, Providence, Boston stay\.$/.test(c.text)));
+  const { openerCheckLine } = await import("../src/lib/tour/scout.ts");
+  const plan = run.events.find((e: any) => e.event.type === "plan").event.plan;
+  const providence = plan.stops.find((s: any) => s.city.name === "Providence");
+  assert.match(openerCheckLine(plan, [{ city: "Providence", evidence: "Q46", smallerFound: false }], false)!.text, /no other act within Joe List's size fit there/);
+  assert.equal(openerCheckLine(plan, [{ city: "Providence", evidence: "Q46" }], true), undefined, "an opener change is described by the answer itself");
+  assert.equal(openerCheckLine(plan, [{ city: "Providence", evidence: "Q46" }], false, { add: [], remove: [providence.stopId] }), undefined, "a dropped stop's opener is not reported");
+});
+
+test("the guard withholds implied venue partnerships", async () => {
+  const { planClaims } = await import("../src/lib/guard.ts");
+  assert.match(planClaims("Boston why", "O'Briens Pub and partner venues suit introspective indie folk.", {})!, /partnership/);
+  assert.match(planClaims("Burlington why", "Monkey House and partner rooms draw indie folk fans.", {})!, /partnership/);
+  assert.equal(planClaims("risks", "Confirm availability with each venue before announcing partnerships.", {}), undefined, "advice about partnerships is fine");
+});
+
+test("a higher-scoring city left off a drivable route says why (S.G. Goodman: St. Louis)", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { skippedCityText } = await import("../src/lib/tour/coverage-text.ts");
+  const texts: Record<string, string> = {};
+  for (const slug of ["us-emerging", "us-comedian", "us-americana"]) {
+    const run = JSON.parse(readFileSync(new URL(`../public/presets/${slug}.json`, import.meta.url), "utf8"));
+    const cities = run.events.filter((e: any) => e.event.type === "cities").at(-1).event.cities;
+    const plan = run.events.find((e: any) => e.event.type === "plan").event.plan;
+    const stops = new Set(plan.stops.map((s: any) => s.city.name));
+    texts[slug] = skippedCityText(cities, (c) => stops.has(c.name));
+  }
+  assert.equal(texts["us-americana"], "St. Louis (89.9) scores above Indianapolis (89.0), but swapping it in would put a leg over a day's drive, and the two are effectively tied.");
+  assert.equal(texts["us-comedian"], "", "Austin is explained as outside the run instead");
+});
+
+test("after Apply, kept AI text is checked against the new plan: a stale summary becomes code-written", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { recheckKeptText } = await import("../src/lib/tour/apply.ts");
+  const run = JSON.parse(readFileSync(new URL("../public/presets/us-emerging.json", import.meta.url), "utf8"));
+  const plan = run.events.find((e: any) => e.event.type === "plan").event.plan;
+  const albany = plan.stops.find((s: any) => s.city.name === "Albany");
+  // Providence joins in Albany's place: not near a fan hotspot, and the route now starts in Burlington.
+  const providence = { ...albany, stopId: "s9", city: { ...albany.city, name: "Providence", affinity: 0.913, hotspot: undefined, lat: 41.824, lng: -71.4128 }, why: undefined, pitch: undefined };
+  const order = ["Burlington", "Boston", "Providence", "New York", "Philadelphia"];
+  const stops = [...plan.stops.filter((s: any) => s !== albany), providence].map((s: any) => ({ ...s, order: order.indexOf(s.city.name) + 1 }));
+  const stale = { text: "This tour charts five cities from Boston to Philadelphia, all near Qloo fan hotspots.", evidence: ["Q6"], kind: "interpretation" };
+  const next = recheckKeptText({ ...plan, stops, candidates: [...plan.candidates, providence.city], summary: stale }, "+ Providence (91.3) · − Albany (88.7)");
+  assert.equal(next.summary!.kind, "template");
+  assert.match(next.summary!.text, /^Route updated by the scout \(\+ Providence/);
+  const fine = { text: "Maya is a new act aimed at fans of Joanna Sternberg.", evidence: ["Q6"], kind: "interpretation" };
+  assert.equal(recheckKeptText({ ...plan, stops, candidates: [...plan.candidates, providence.city], summary: fine }, "x").summary!.text, fine.text, "a summary that still holds is kept");
+});
+
+test("the route-check verdict quotes the same driving number as the agent's tool (same source, same rounding)", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { routeVerdict } = await import("../src/lib/tour/scout.ts");
+  const { swapFits, ROAD_FACTOR } = await import("../src/lib/tour/region.ts");
+  const run = JSON.parse(readFileSync(new URL("../public/presets/us-emerging.json", import.meta.url), "utf8"));
+  const plan = run.events.find((e: any) => e.event.type === "plan").event.plan;
+  const f = run.scout.events.find((e: any) => e.event.type === "answer").event.followUp;
+  const st = plan.stops.filter((s: any) => s.city.lat !== undefined);
+  const added = f.proposal.add[0], removed = st.findIndex((s: any) => s.stopId === f.proposal.remove[0]);
+  const tool = Math.round((swapFits(st.map((s: any) => ({ lat: s.city.lat, lng: s.city.lng })), removed, { lat: added.lat, lng: added.lng }).extraKm * ROAD_FACTOR) / 10) * 10;
+  const verdict = routeVerdict(plan, f.pins, f.proposal).text;
+  assert.match(verdict, new RegExp(`≈ ${Math.abs(tool)} km ${tool < 0 ? "less" : "more"} driving`), verdict);
+  assert.equal(tool, -130, "Maya: Providence for Albany");
+});
+
+test("a stored plan's source line comes from the plan, so every visitor of a share link reads the same line", async () => {
+  const { planOrigin, sourceLabel, editedOrigin } = await import("../src/lib/tour/source-label.ts");
+  const d = () => "Oct 7";
+  const demo = { createdAt: "2026-10-08T00:00:00Z", demo: { capturedAt: "2026-10-07T00:00:00Z" } };
+  assert.equal(sourceLabel(planOrigin(demo), d), "Shared demo plan, captured from live Qloo data on Oct 7");
+  // A plan made by Apply keeps "scout change" for everyone; "from live Qloo data" only when that Apply made Qloo calls.
+  assert.equal(sourceLabel(planOrigin({ ...demo, parentId: "p", appliedLive: true }), d), "Shared demo plan, captured from live Qloo data on Oct 7 · scout change from live Qloo data");
+  assert.equal(sourceLabel(planOrigin({ ...demo, parentId: "p" }), d), "Shared demo plan, captured from live Qloo data on Oct 7 · scout change applied");
+  // A question alone (a copy with an answer) is not called a change, in the session or on reload.
+  const preset = { kind: "preset" as const, slug: "us-emerging", capturedAt: "2026-10-07T00:00:00Z" };
+  const asked = editedOrigin(preset, false, true);
+  assert.equal(sourceLabel(asked, d), "Captured from live Qloo data on Oct 7");
+  assert.equal(asked.kind, "edited"); // later questions go to the copy, not the demo
+  // Applying after a question is a change.
+  assert.equal(sourceLabel(editedOrigin(asked, true), d), "Captured from live Qloo data on Oct 7 · scout change from live Qloo data");
+});
+
+test("the route check's trace splits into the server's standard check, the agent's own requests and the verdict, from the recording", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { addCheck, settle, verdictCheck, traceGroups } = await import("../src/lib/tour/trace.ts");
+  for (const [slug, server, agent, verdict] of [["us-emerging", 7, 8, "proposed: Swap Albany (88.7) → Providence (91.3)"], ["us-comedian", 7, 5, "no change proposed"]] as const) {
+    const run = JSON.parse(readFileSync(new URL(`../public/presets/${slug}.json`, import.meta.url), "utf8"));
+    let checks: any[] = [], seen = 0, f: any;
+    for (const { event: e } of run.scout.events) {
+      if (e.type === "checking" || e.type === "step") checks = addCheck(checks, e, seen);
+      else if (e.type === "source") seen++;
+      else if (e.type === "answer") { f = e.followUp; checks = [...settle(checks), verdictCheck(f)]; }
+    }
+    const g = traceGroups(checks, f)!;
+    assert.equal(g.server.requests, server, slug);
+    assert.equal(g.agent.requests, agent, slug);
+    assert.equal(g.server.checks.length, server, `${slug}: one line per server request`);
+    assert.ok(g.server.checks[0].label.startsWith("ranking the cities near your route"), slug);
+    assert.ok(g.agent.checks.every((c: any) => !/rooms scored|no rooms found/.test(c.label)), `${slug}: no server step among the agent's`);
+    assert.equal(g.verdict.check.label, verdict);
+    assert.equal(g.verdict.codeWritten, true);
+  }
+  // While the scout works, or for a quick question, there are no groups.
+  assert.equal(traceGroups([{ label: "x", status: "running" }], { kind: "agent", sources: [], answer: { text: "", evidence: [], kind: "template" } } as any), undefined);
+});
+
+test("every image the README and the Devpost text (docs/SUBMISSION.md) list exists in the repo", async () => {
+  const { readFileSync, existsSync } = await import("node:fs");
+  const root = new URL("../", import.meta.url);
+  const readme = readFileSync(new URL("README.md", root), "utf8");
+  const submission = readFileSync(new URL("docs/SUBMISSION.md", root), "utf8");
+  const refs = [...readme.matchAll(/\]\(((?:docs\/)?screenshots\/[^)\s]+|docs\/[^)\s]+\.(?:png|gif|jpg))\)/g)].map((m) => m[1]);
+  const gallery = [...submission.matchAll(/`([\w-]+\.(?:png|gif|jpg))`/g)].map((m) => `docs/screenshots/${m[1]}`);
+  assert.ok(refs.length >= 8 && gallery.length >= 8, `found ${refs.length} README and ${gallery.length} gallery images`);
+  for (const path of [...refs, ...gallery]) assert.ok(existsSync(new URL(path, root)), `missing ${path}`);
+});
+
+test("while a plan streams, no city on the final route is called skipped (Maya: Boston arrives last)", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { routeNotes } = await import("../src/lib/tour/coverage-text.ts");
+  for (const slug of ["us-emerging", "us-comedian", "us-americana"]) {
+    const run = JSON.parse(readFileSync(new URL(`../public/presets/${slug}.json`, import.meta.url), "utf8"));
+    const finalStops = new Set<string>(run.events.find((e: any) => e.event.type === "plan").event.plan.stops.map((s: any) => s.city.name));
+    let cities: any[] = [];
+    const arrived = new Set<string>();
+    let complete = false;
+    let ungatedFalse = 0;
+    for (const { event } of run.events) {
+      if (event.type === "cities") cities = event.cities;
+      if (event.type === "stop") arrived.add(event.stop.city.name);
+      if (event.type === "plan") complete = true;
+      if (!cities.length) continue;
+      const isStop = (c: any) => arrived.has(c.name);
+      const notes = routeNotes(cities, isStop, complete);
+      const text = `${notes.skipped} ${notes.offText}`;
+      for (const name of finalStops) {
+        if (!complete) assert.ok(!text.includes(name), `${slug}: "${name}" is on the final route but a streaming note names it: ${text}`);
+      }
+      if (!complete) assert.equal(notes.cut, 0, "no cut line until the route is final");
+      // Without the gate, the bug the judges saw: a final stop named as skipped mid-stream.
+      const raw = routeNotes(cities, isStop, true);
+      if (!complete && [...finalStops].some((n) => !arrived.has(n) && `${raw.skipped} ${raw.offText}`.includes(`${n} (`))) ungatedFalse++;
+    }
+    assert.ok(complete);
+    if (slug === "us-emerging") assert.ok(ungatedFalse > 0, "the Maya replay does stream Boston last (guards against a vacuous test)");
+  }
+});

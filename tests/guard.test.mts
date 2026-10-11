@@ -115,7 +115,9 @@ test("plan claims the data cannot back are withheld: he/she for the act, a new a
   assert.ok(planClaims("Boston pitch", "Maya's honest, introspective songwriting connects here.", o));
   assert.ok(planClaims("Boston pitch", "Maya brings confessional songs to Boston.", o));
   assert.equal(planClaims("Boston pitch", "Subject: Maya at O'Briens Pub", o), undefined);
-  assert.equal(planClaims("Boston pitch", "Maya is a new act whose audience lines up with yours.", o), undefined, "the skeleton's own line passes");
+  assert.match(planClaims("Boston pitch", "Maya is a new act whose audience lines up with yours: Qloo's taste data shows fans of Joanna Sternberg here favour indie-folk.", o)!, /audience for the new act/, "a new act has no audience of its own");
+  assert.equal(planClaims("Boston pitch", "Maya is a new act aimed at fans of Joanna Sternberg: Qloo's taste data ranks Boston among the strongest cities for those fans.", o), undefined, "the skeleton's own line passes");
+  assert.ok(planClaims("Boston pitch", "We'd love a slot with Tomberlin, whose audience shares tastes with ours.", o));
   assert.ok(planClaims("answer", "Tomberlin, already booked for New York, fits.", o));
   assert.ok(planClaims("Providence why", "Darlington is near a Qloo fan hotspot.", o), "no hotspot near Providence");
   assert.equal(planClaims("Burlington why", "Burlington sits near a Qloo fan hotspot.", o), undefined);
@@ -145,3 +147,61 @@ test("a rank among the scored cities is not a national rank", async () => {
   assert.ok(planClaims("Burlington why", "Burlington ranks #2 nationally for this audience.", {}));
   assert.equal(planClaims("Burlington why", "Burlington ranks #2 of the scored cities.", {}), undefined);
 });
+
+test("partnership rule: room/venue partnership claims are withheld, advice about people is not", async () => {
+  const { planClaims } = await import("../src/lib/guard.ts");
+  const o = { actName: "Maya", emerging: true, venues: ["Bowery Ballroom", "O'Briens Pub"] };
+  const room = "implied a partnership between rooms that the data does not show";
+  // Withheld: rooms or venues presented as partners.
+  for (const t of [
+    "Book the partner venues in Boston and Cambridge.",
+    "Its sister rooms in Brooklyn draw the same crowd.",
+    "The two rooms are partnered, so one hold covers both.",
+    "There is a partnership between the venues on this run.",
+    "Bowery Ballroom has partnered with a local club for years.",
+    "The promoter partnered with the Bowery Ballroom last spring.",
+    "Partner with the venue next door for a double bill.",
+    "We are in partnership with O'Briens Pub here.",
+  ]) assert.equal(planClaims("New York why", t, o), room, t);
+  // A suggested act presented as booked is a booking claim.
+  assert.equal(planClaims("New York why", "Maya is already partnered with Tomberlin here.", o), "presented a suggestion as a booking");
+  // Allowed: plain advice about people.
+  for (const t of [
+    "Partner with a local act for the support slot to reach these fans.",
+    "Partnering with Tomberlin for a support slot puts Maya in front of this audience.",
+    "Consider partnering with a local promoter who knows the scene.",
+    "Partner with a local act and pitch a show at Bowery Ballroom.",
+  ]) assert.equal(planClaims("New York why", t, o), undefined, t);
+});
+
+test("round 7 guard rules: weak stops called strong, absolutes about the world, the route's span, fans in every stop", async () => {
+  const { planClaims } = await import("../src/lib/guard.ts");
+  const o = { cityRanks: { Albany: 5, Boston: 2, Philadelphia: 4 }, rankOf: 7, weakest: "Albany", routeEnds: ["Washington, DC", "Boston"] as [string, string], stopNames: ["Washington, DC", "Philadelphia", "New York", "Providence", "Boston"], hotspotCities: ["New York", "Boston"] };
+  assert.match(planClaims("Albany why", "Albany is a strong fit on this route.", o)!, /weakest stop strong/);
+  assert.equal(planClaims("Philadelphia why", "Philadelphia is a strong fit on this route.", o), undefined, "#4 of 7 is not the bottom third");
+  assert.match(planClaims("Philadelphia why", "Philadelphia is a strong fit.", { ...o, cityRanks: { Philadelphia: 6 } })!, /bottom third/);
+  assert.equal(planClaims("Boston why", "Boston is a strong fit on this route.", o), undefined, "a top-three stop may be called strong");
+  assert.match(planClaims("answer", "The route holds. No stronger cities exist within a day's drive of Providence.", {})!, /absolute/);
+  assert.equal(planClaims("answer", "No stronger city came up in the cities the check scored.", {}), undefined);
+  assert.match(planClaims("summary", "This Northeast corridor route (New York through Providence) hits comedy rooms.", o)!, /span/);
+  assert.equal(planClaims("summary", "The run goes from Washington, DC to Boston.", o), undefined, "the real ends pass");
+  assert.match(planClaims("summary", "Five cities, each hosting fans who share core tastes in folk.", o)!, /only 2 of 5 stops/);
+});
+
+test("a superlative about the route's markets as a group needs every stop in the top third", async () => {
+  const { planClaims } = await import("../src/lib/guard.ts");
+  const o = { cityRanks: { "New York": 1, "Washington, DC": 3, Philadelphia: 4, Boston: 5, Providence: 6 }, rankOf: 8,
+    stopNames: ["Washington, DC", "Philadelphia", "New York", "Providence", "Boston"], routeEnds: ["Washington, DC", "Boston"] as [string, string] };
+  assert.match(planClaims("summary", "The route targets intimate rooms across the Northeast's strongest comedy markets.", o)!, /below the top third/);
+  assert.match(planClaims("summary", "Five of the best cities for this audience.", o)!, /Philadelphia, Providence, Boston rank below/);
+  const top = { ...o, cityRanks: { "Washington, DC": 1, Philadelphia: 2, "New York": 3, Providence: 2, Boston: 1 } };
+  assert.equal(planClaims("summary", "The route takes in the strongest comedy markets the check scored.", top), undefined, "all stops in the top third");
+  assert.equal(planClaims("Boston why", "Boston ranks among the strongest cities for this audience.", { cityRanks: { Boston: 2 } }), undefined, "per-stop lines keep their own rule");
+});
+
+test("the fan cluster is credited to the fan heatmap, not room data", async () => {
+  const { planClaims } = await import("../src/lib/guard.ts");
+  assert.match(planClaims("Boston why", "Qloo's room data shows Church Green concentrates fans of Joanna Sternberg.", {})!, /fan heatmap/);
+  assert.equal(planClaims("Boston why", "Qloo's fan heatmap puts fans around Church Green; O'Briens Pub leads on room affinity.", {}), undefined);
+});
+

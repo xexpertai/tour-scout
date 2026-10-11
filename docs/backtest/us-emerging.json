@@ -1,0 +1,128 @@
+{
+ "act": "Joanna Sternberg (the comparison artist behind the fictional demo act Maya)",
+ "window": "2024-02..2025-04",
+ "sources": [
+  {
+   "url": "https://web.archive.org/web/20240425025830/https://www.setlist.fm/setlists/joanna-sternberg-bf73542.html",
+   "retrieved": "2026-10-11",
+   "note": "setlist.fm artist page 1 as of 25 Apr 2024, Internet Archive snapshot. Excluded: Big Ears Festival 2024 (no city on the page)."
+  },
+  {
+   "url": "https://web.archive.org/web/20251109231425/https://www.setlist.fm/setlists/joanna-sternberg-bf73542.html",
+   "retrieved": "2026-10-11",
+   "note": "setlist.fm artist page 1 as of 9 Nov 2025, Internet Archive snapshot. Excluded: Woodsist Festival 2025, End of the Road 2024 and the Holiday Spectacular 2024 (no city on the page)."
+  }
+ ],
+ "shows": [
+  {
+   "date": "2024-02-23",
+   "city": "Vashon, WA",
+   "venue": "Vashon Island Coffee Roasterie",
+   "lat": 47.4473,
+   "lng": -122.4598,
+   "source": 0
+  },
+  {
+   "date": "2024-02-24",
+   "city": "Seattle",
+   "venue": "Fremont Abbey Arts Center",
+   "source": 0
+  },
+  {
+   "date": "2024-02-25",
+   "city": "Portland, OR",
+   "venue": "Polaris Hall",
+   "source": 0
+  },
+  {
+   "date": "2024-02-27",
+   "city": "San Francisco",
+   "venue": "Swedish American Hall",
+   "source": 0
+  },
+  {
+   "date": "2024-02-29",
+   "city": "Los Angeles",
+   "venue": "Bob Baker Marionette Theater",
+   "source": 0
+  },
+  {
+   "date": "2024-03-01",
+   "city": "Los Angeles",
+   "venue": "Barnsdall Art Park",
+   "source": 0
+  },
+  {
+   "date": "2024-03-07",
+   "city": "New York",
+   "venue": "Bowery Ballroom",
+   "source": 0
+  },
+  {
+   "date": "2024-04-04",
+   "city": "New York",
+   "venue": "Bowery Ballroom",
+   "source": 0
+  },
+  {
+   "date": "2024-04-14",
+   "city": "Santa Cruz, CA",
+   "venue": "The Catalyst",
+   "lat": 36.9741,
+   "lng": -122.0308,
+   "source": 0
+  },
+  {
+   "date": "2024-08-30",
+   "city": "London",
+   "venue": "Grand Junction",
+   "lat": 51.5072,
+   "lng": -0.1276,
+   "source": 1
+  },
+  {
+   "date": "2024-09-03",
+   "city": "Glasgow",
+   "venue": "Cottiers Theatre",
+   "lat": 55.8642,
+   "lng": -4.2518,
+   "source": 1
+  },
+  {
+   "date": "2024-09-04",
+   "city": "Manchester",
+   "venue": "Hallé at St Michael's",
+   "lat": 53.4808,
+   "lng": -2.2426,
+   "source": 1
+  },
+  {
+   "date": "2024-09-24",
+   "city": "Brooklyn, NY",
+   "venue": "Warsaw",
+   "lat": 40.7223,
+   "lng": -73.9506,
+   "source": 1
+  },
+  {
+   "date": "2024-11-18",
+   "city": "New York",
+   "venue": "Bowery Ballroom",
+   "source": 1
+  },
+  {
+   "date": "2025-01-09",
+   "city": "New York",
+   "venue": "Joe's Pub",
+   "source": 1
+  },
+  {
+   "date": "2025-04-28",
+   "city": "Brooklyn, NY",
+   "venue": "Brooklyn Steel",
+   "lat": 40.7116,
+   "lng": -73.9366,
+   "source": 1
+  }
+ ]
+}

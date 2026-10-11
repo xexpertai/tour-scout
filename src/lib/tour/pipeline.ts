@@ -14,6 +14,7 @@ import { QlooError, audienceDemographics, compareAudiences, describeEntity, enti
 import { clean, possessive } from "../text.ts";
 import { discoverCities, rankShortlist, scoreCity } from "./cities.ts";
 import type { ArtistKind, City, Coverage, FanProfile, StopData, TourEvent, TourInput } from "./types.ts";
+import { isKnownSupergroup } from "./realism.ts";
 
 export { ARENA_POPULARITY } from "./scale.ts";
 
@@ -79,9 +80,9 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
  * like a headliner), and, for a comedian, a person Qloo describes first as an actor with no stand-up
  * ("Canadian actor and comedian"), as opposed to a stand-up who also acts ("American comedian and actor").
  */
-export const unlikelyOpener = (description: string | undefined, comedian: boolean) => {
+export const unlikelyOpener = (description: string | undefined, comedian: boolean, name?: string) => {
   const d = description ?? "";
-  if (/\bsupergroup\b/i.test(d)) return true;
+  if (/\bsupergroup\b/i.test(d) || (name !== undefined && isKnownSupergroup(name))) return true;
   return comedian && /^(?:[A-Z][\w-]*\s+){0,3}(?:actor|actress)\b/.test(d.trim()) && !/stand[- ]?up/i.test(d);
 };
 
@@ -130,7 +131,7 @@ export async function scoutStop(city: City, index: number, ctx: StopContext, ste
     () => recommend({ targetType: artistType, signals, signalLocation: where, includeTags: comedian ? COMEDIAN_TAGS : undefined, includeTagsOperator: comedian ? "union" : undefined, limit: 8 }),
     `Similar ${comedian ? "comedians" : "artists"} with affinity in ${cityName}`).then(async (r) => {
     // An opener should not outdraw the act: prefer candidates at or below its popularity, then unused ones.
-    const others = (r?.entities ?? []).filter((e) => !signals.includes(e.id) && !isRelatedAct(e.description, ctx.names) && !unlikelyOpener(e.description, comedian));
+    const others = (r?.entities ?? []).filter((e) => !signals.includes(e.id) && !isRelatedAct(e.description, ctx.names) && !unlikelyOpener(e.description, comedian, e.name));
     // Order: candidates at or below the act's popularity (Qloo's order), then the rest least popular first,
     // so a small act is never paired with a far bigger one while a closer fit exists. Unused ones win.
     const fitsAct = (e: QEntity) => ctx.popularity === undefined || (e.popularity !== undefined && e.popularity <= ctx.popularity);
@@ -143,7 +144,7 @@ export async function scoutStop(city: City, index: number, ctx: StopContext, ste
       if (ctx.usedOpeners?.has(e.id)) continue;
       ctx.usedOpeners?.add(e.id);
       if (vets++ >= MAX_VETS) { pick = e; break; }
-      if (!unlikelyOpener(e.description ?? await describedAs(e, artistType, step), comedian)) { pick = e; break; }
+      if (!unlikelyOpener(e.description ?? await describedAs(e, artistType, step), comedian, e.name)) { pick = e; break; }
     }
     if (!r || !pick) return;
     stop.opener = { entityId: pick.id, name: pick.name, affinity: pick.affinity, evidence: r.source.id,

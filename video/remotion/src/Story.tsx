@@ -47,7 +47,7 @@ function shots(): Shot[] {
   }
   // A stop: real rooms, a support slot sized to the act; it ends as the pane starts to scroll.
   {
-    const from = M("ticket").scroll - (S.pitch - S.ticket);
+    const from = Math.max(0, M("ticket").scroll - (S.pitch - S.ticket));
     out.push({
       start: S.ticket, end: S.pitch, take: "ticket", from,
       keys: [{ t: 0, view: full("ticket") }, { t: 0.5, view: TICKET, dur: 1.0 }, { t: 1.6, view: push(TICKET), dur: 5.6 }],
@@ -67,7 +67,7 @@ function shots(): Shot[] {
       spot: { rect: R("ticket").dialog, at: 0, pad: 0 },
     });
   }
-  // The agent route check: trace → "a stronger city that still drives" → Apply → the route redraws.
+  // The agent route check: trace → "a stronger city that's also a shorter drive" → Apply (a copy) → the route redraws.
   {
     const c = M("check");
     const a = S.agent, b = wordAt("agent", "finds") - 0.15, d = wordAt("agent", "Apply") - 0.1, e = d + 1.4;
@@ -81,7 +81,8 @@ function shots(): Shot[] {
     const bFrom = c.answer + 0.2, bRate = (c.applyReady - bFrom) / (d - b);
     out.push({
       start: b, end: d, take: "check", from: bFrom, rate: bRate, keys: [{ t: 0, view: DOCK }, { t: 0.1, view: { ...DOCK, y: DOCK.y + 24 }, dur: d - b }],
-      callouts: [{ text: "Stronger, still drivable", target: R("check").answer, at: 0.3, side: "left", box: false, line: false, pill: { x: 1900, y: R("check").answer.y - 70 } }],
+      // The pill sits in the dock, between the swap title and Apply, so it covers no scores.
+      callouts: [{ text: "Stronger, and a shorter drive", target: R("check").answer, at: 0.3, side: "left", box: false, line: false, pill: { x: R("check").answer.x + 510, y: R("check").answer.y + 27 } }],
     });
     out.push({
       start: d, end: e, take: "check", from: c.applyReady, rate: (c.apply + 0.04 - c.applyReady) / (e - d), keys: [{ t: 0, view: DOCK }],
@@ -89,7 +90,9 @@ function shots(): Shot[] {
     });
     out.push({
       start: e, end: S.holds, take: "check", from: c.applied - 0.1, rate: Math.max(1, (c.redrawn + 1.5 - c.applied) / (S.holds - e)),
-      keys: [{ t: 0, view: full("check") }], tag: "Route redrawn: Washington, DC in, Albany out",
+      keys: [{ t: 0, view: full("check") }], tag: "Route redrawn: Providence in, Albany out",
+      // Apply on a demo saves the visitor's own copy; the app says so (the demo itself is unchanged).
+      callouts: R("check").copy ? [{ text: "Your copy · the demo is unchanged", target: R("check").copy, at: 0.6, side: "bottom" }] : [],
     });
   }
   // Joe List: the route check holds, and says why.
@@ -97,7 +100,8 @@ function shots(): Shot[] {
     const h = M("holds");
     out.push({
       start: S.holds, end: S.phone, take: "holds", from: h.answer - 1.6, keys: [{ t: 0, view: full("holds") }],
-      callouts: [{ text: "Route holds: no change for show", target: R("holds").answer, at: 1.4, side: "top", box: false, line: false, pill: { x: 1700, y: R("holds").answer.y - 62 } }],
+      // The pill sits on the dock's header line, clear of the ranked strip above it.
+      callouts: [{ text: "Route holds: no swap needed", target: R("holds").answer, at: 1.4, side: "top", box: false, line: false, pill: { x: R("holds").answer.x + 476, y: R("holds").answer.y + 10 } }],
     });
   }
   // Receipts: the toggle, then the exact Qloo request.

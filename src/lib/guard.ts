@@ -119,19 +119,91 @@ export type GuardOpts = {
   hotspotCities?: string[];
   /** Each stop's rank among the scored cities: "among the strongest" only for the top three. */
   cityRanks?: Record<string, number>;
+  /** Room names on this plan: "partnered with <room>" is a claim the data cannot show. */
+  venues?: string[];
+  /** The route's first and last stop and its stop count, for claims about the route's span and "every stop". */
+  routeEnds?: [string, string]; stopNames?: string[];
+  /** How many cities were scored (for "bottom third"), and the route's weakest stop. */
+  rankOf?: number; weakest?: string;
 };
+
+/** Absolute claims about the world that a check over a few scored cities cannot support. */
+const ABSOLUTE_NONE = /\b(?:no (?:stronger|better|other) (?:cities|city|markets?|options?) (?:exists?|anywhere)|there (?:is|are) no (?:stronger|better) (?:city|cities|markets?)(?! (?:in|among|that) (?:the|this|its) (?:check|ranking|results|scored))|no (?:stronger|better) (?:city|cities|markets?) (?:exists?|anywhere))\b/i;
+
+const ROOM = String.raw`(?:rooms?|venues?|clubs?|stages?|spaces?|bars?|halls?|theat(?:er|re)s?|lounges?|pubs?|ballrooms?|listening rooms?)`;
+const ROOM_PARTNER = new RegExp(String.raw`\bpartner ${ROOM}\b|\b(?:sister|affiliated) ${ROOM}\b|\b${ROOM} (?:are |is )?partner(?:ed|s)\b|\bpartnership between (?:the |these |both |two )?${ROOM}`, "i");
+const PARTNER_WITH = /\b(?:partner(?:ed|ing|s)?|in partnership) with\b([^.;\n]{0,40})/gi;
+/**
+ * A claimed partnership between rooms/venues ("partner venues", "sister rooms", "partnered with
+ * <room>"). Plain advice about people ("partner with a local opener") is not a room claim.
+ */
+export function roomPartnership(text: string, venues: string[] = []): boolean {
+  if (ROOM_PARTNER.test(text)) return true;
+  const roomObj = new RegExp(String.raw`^\s*(?:the |a |an |another |other |local |nearby |this |that |their |its |your )*(?:\w+ ){0,2}${ROOM}\b`, "i");
+  for (const m of text.matchAll(PARTNER_WITH)) {
+    const after = m[1];
+    if (roomObj.test(after)) return true;
+    const obj = after.replace(/^\s*(?:the\s+)?/i, "").toLowerCase();
+    if (venues.some((v) => v.length > 2 && obj.startsWith(v.toLowerCase().replace(/^the\s+/, "")))) return true;
+  }
+  return false;
+}
 
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 /** Claims the data cannot back for this plan: pronouns for the act, a new act's own music, hotspots that are not there. */
 export function planClaims(field: string, text: string, o: GuardOpts): string | undefined {
   if (/\b(he|she|him|her|hers|his)\b/i.test(text)) return "used he/she (the act's gender is not in the data)";
   if (/\b(already booked|is booked|are booked|booked (for|at|in))\b/i.test(text)) return "presented a suggestion as a booking";
+  if (/\b(already|currently|now) (touring|on tour|playing|performing|routing)\b|\bon tour (with|in|through)\b/i.test(text)) return "claimed an act's touring activity, which Qloo data does not show";
+  if (/\b(?:is|are|was|were|been|already|now) partnered with\b/i.test(text)) return "presented a suggestion as a booking";
+  if (roomPartnership(text, o.venues)) return "implied a partnership between rooms that the data does not show";
   if (/\branks? #?\d+[^.]{0,20}\b(nationally|in the (country|nation|US|United States))\b/i.test(text)) return "presented a rank among the scored cities as a national rank";
   if (/\b(optimi[sz]ed|optimal|optimum|perfect(ly)? (fit|match))\b/i.test(text)) return "claimed the plan is optimal (the data ranks options; it does not prove a best)";
   if (/\bmatch(es|ed)?\b[^.]{0,40}\b(well|perfectly|ideally)\b|\b(well|perfectly|ideally)[- ]matched\b|\b(line-?up|openers?|support acts?) (is|are) (strong|great|perfect|ideal)\b/i.test(text)) return "claimed a fit the tool results did not measure";
   if (o.emerging && /\b(opener|openers|opens)\b/i.test(text) && !/\bopen for\b/i.test(text)) return "called a support-slot act an opener (the new act opens for them)";
+  // A new act has no Qloo data, so no audience of its own: "Maya is a new act whose audience lines up with yours",
+  // "Maya's fans", "our audience" all claim one.
+  if (o.emerging && (/\bnew act whose (?:audience|fans|listeners|fanbase)\b/i.test(text) || /\b(?:our|my) (?:audience|fans|fanbase|listeners)\b|\bshares? tastes with ours\b/i.test(text)
+    || (o.actName && new RegExp(`\\b${escape(o.actName)}(?:'s|’s)\\s+(?:own\\s+)?(?:audience|fans|fanbase|listeners|following)\\b`, "i").test(text)))) {
+    return "claimed an audience for the new act, which has no Qloo data of its own";
+  }
+  if (ABSOLUTE_NONE.test(text)) return "stated an absolute about cities the check did not score";
+  // Where fans cluster comes from Qloo's fan heatmap (where_popular), not from room affinity.
+  if (/\broom (?:data|affinity|results)\b[^.]{0,80}\b(?:concentrat\w*|cluster\w*|gather\w*)\b|\b(?:concentrat\w*|cluster\w*)\b[^.]{0,40}\b(?:per|according to|in) Qloo'?s? room (?:data|affinity)\b/i.test(text)) {
+    return "credited room data for where fans cluster (that comes from Qloo's fan heatmap)";
+  }
   if (o.emerging && o.actName && new RegExp(`\\b${escape(o.actName)}(?:'s\\s+(?:[\\w-]+,?\\s+){0,4}(?:songwriting|work|music|approach|sound|storytelling|style|songs)|\\s+(?:is(?! a new act)|brings|writes|makes|sings|plays|delivers)\\b)`, "i").test(text)) {
     return "described the new act, which has no Qloo data of its own";
+  }
+  // The route's weakest stop, or one in the bottom third of the scored cities, is not "strong" or "the best":
+  // the card beside it shows its rank.
+  if (o.cityRanks && / (why|pitch)$/.test(field)) {
+    const city = field.replace(/\s+(why|pitch)$/, "");
+    const rank = o.cityRanks[city];
+    const low = city === o.weakest || (rank !== undefined && o.rankOf !== undefined && rank > Math.ceil((o.rankOf * 2) / 3));
+    if (low && /\b(?:a |the )?(?:strong|strongest|best|top|ideal|excellent|great) (?:fit|match|market|city|stop|choice|showing|option)\b/i.test(text)) return city === o.weakest ? "called the route's weakest stop strong" : "called a stop in the bottom third of the scored cities strong";
+  }
+  // The route's span: "from A to B" or "(A through B)" naming two stops must name its two ends.
+  if (o.routeEnds && o.stopNames && /^summary/.test(field)) {
+    const names = o.stopNames.map(escape).join("|");
+    const m = new RegExp(`\\b(${names})\\b(?:,? (?:and|&) \\w+)?\\s+(?:to|through|thru|down to|up to)\\s+(${names})\\b`, "i").exec(text);
+    const ends = o.routeEnds.map((x) => x.toLowerCase());
+    if (m && !(ends.includes(m[1].toLowerCase()) && ends.includes(m[2].toLowerCase()) && m[1].toLowerCase() !== m[2].toLowerCase())) return `misstated the route's span (it runs ${o.routeEnds[0]} to ${o.routeEnds[1]})`;
+  }
+  // A superlative about the route's markets as a group ("the Northeast's strongest comedy markets", "top
+  // markets", "best cities") needs every stop in the top third of the scored cities.
+  if (/^summary/.test(field) && o.cityRanks && o.rankOf && o.stopNames?.length
+    && /\b(?:strongest|top|best|leading|premier)\b[^.]{0,30}?\b(?:markets|cities|stops|scenes)\b/i.test(text)) {
+    const third = Math.ceil(o.rankOf / 3);
+    const below = o.stopNames.filter((c) => (o.cityRanks![c] ?? Infinity) > third);
+    if (below.length) return `called the route's markets the strongest, but ${below.join(", ")} ${below.length === 1 ? "ranks" : "rank"} below the top third`;
+  }
+  // "Each city hosts fans…" when only some stops are near a fan hotspot.
+  if (o.hotspotCities && o.stopNames && o.hotspotCities.length < o.stopNames.length && /^summary/.test(field)
+    && (/\b(?:each|every|all(?: (?:five|four|three|six|\d))?)\b(?: (?:city|cities|stop|stops|market|markets))?[^.]{0,40}\b(?:hosting|hosts?|home to|with|has|have)\b[^.]{0,25}\bfans\b/i.test(text)
+      || /\b(?:all|each|every)\b[^.]{0,40}\bnear\b[^.]{0,20}\bhotspots?\b/i.test(text)
+      || /\b(?:cities|stops|markets)\b where (?:fans|the audience|this audience)\b[^.]{0,50}\b(?:concentrate|cluster|gather|live)\b/i.test(text))) {
+    return `claimed fans in every stop, but only ${o.hotspotCities.length} of ${o.stopNames.length} stops are near a Qloo fan hotspot`;
   }
   if (o.cityRanks && /\b(among the (strongest|top|best)|top (market|city|cities)|strongest (market|city|cities))\b/i.test(text)) {
     const city = field.replace(/\s+(why|pitch)$/, "");

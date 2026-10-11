@@ -1,3 +1,4 @@
+import { ownerOf, withOwnerCookie } from "@/lib/owner";
 import { liveUnavailable } from "@/lib/qloo";
 import { clientKey, limitedResponse, runCache, take, takeDailyRun } from "@/lib/limits";
 import { NDJSON_HEADERS, ndjsonStream } from "@/lib/ndjson";
@@ -73,7 +74,8 @@ export async function POST(req: Request) {
   if (!daily.ok) return limitedResponse(daily, "DAILY_CAP");
 
   // Only plans this server generated are stored for share links.
-  const store = async (plan: TourPlan) => { await savePlan(plan); runCache.set(key, plan.id); };
-  return new Response(ndjsonStream(planTour(input, req.signal), async (e) => { if (e.type === "plan") await store(e.plan); }), { headers: HEADERS });
+  const owner = ownerOf(req);
+  const store = async (plan: TourPlan) => { plan.owner = owner.hash; await savePlan(plan); runCache.set(key, plan.id); };
+  return new Response(ndjsonStream(planTour(input, req.signal), async (e) => { if (e.type === "plan") await store(e.plan); }), { headers: withOwnerCookie(HEADERS, owner) });
 }
 

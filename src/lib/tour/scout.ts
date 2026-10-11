@@ -18,6 +18,7 @@ import { CLAUDE_MODEL, LlmError, logUsage, takeDailyBudget } from "../llm.ts";
 import { compareAudiences, fanHeatmap, recommend } from "../qloo.ts";
 import { clean, possessive } from "../text.ts";
 import { discoverCities, placeFor, scoreCities, scoreCity } from "./cities.ts";
+import { venueNames } from "./plan.ts";
 import { COMEDIAN_TAGS, describedAs, isRelatedAct, unlikelyOpener, makeStepper, venueTagFor, type StepSink, SMALL_ROOM_POPULARITY } from "./pipeline.ts";
 import type { City, FollowUp, GhostPin, Opener, PlanDiff, TourPlan } from "./types.ts";
 
@@ -71,7 +72,9 @@ Use the tools to answer the user's request about their tour plan, then call prop
 - City scores are Qloo room affinity on a 0–100 scale for ranking cities against each other. Never present them as attendance, ticket sales, certainty, cause, or a prediction about any individual. Never forecast turnout.
 - Never state or imply income, wealth, class or sensitive traits of fans or places. Never invent venues, places, artists or numbers.
 - Never list raw scores in parentheses like "(97, 96.9, 97)"; if a number helps, write it once as "Qloo affinity 97".
-- If act.sounds_like is set, the act is new: an "opener" is an act it could support (it opens for them). Say "a support slot with X", never that X opens for the act.
+- If act.sounds_like is set, the act is new: an "opener" is an act it could support (it opens for them). Say "a support slot with X" or "support act"; never use the words "opener", "openers" or "opens" in the answer, and never say the new act has fans or an audience of its own.
+- The answer's first sentence is your reason in plain words (it is shown as your own words, so it must hold on its own): name the cities and Qloo affinities you compared, scoped to the cities you checked ("of the cities checked…"). Never state absolutes ("no stronger city exists").
+- For driving, use the tool's numbers: extra_drive_km_by_road under 10 means "about the same driving"; otherwise say "about N km more/less driving".
 - Refer to the act by name or as "they"; never he, she, his or her.
 - A route check ("Check this route: …"): call rank_cities or find_cities, then read route_check. If a city is vs_weakest "stronger" with swap_keeps_route_drivable true, you must propose swapping it in for weakest_stop (add_cities + remove_stop_ids). If one is "tied", say they are effectively tied. Only say the route holds when no city is stronger and drivable. Openers: only use a find_openers result for that same city; if it had 0 candidates, say so. Propose at most one change.
 - The answer is at most 70 words, cites the evidence ids (Q…) of the tool results it relies on, and says plainly if the data does not support a change.`;
@@ -221,6 +224,35 @@ export const diffSummary = (plan: TourPlan, add: City[], remove: string[]) => [
   ...remove.map((id) => plan.stops.find((s) => s.stopId === id)!).filter(Boolean).map((s) => `− ${clean(s.city.name)} (${score(s.city.affinity)!.toFixed(1)})`),
 ];
 
+/** One find_openers lookup the route check made for a stop: where, its receipt, and (when known) whether
+ * Qloo returned any act at or below the act's size fit other than the stop's current one. */
+export type OpenerLookup = { city: string; evidence: string; smallerFound?: boolean };
+
+/**
+ * The opener half of the route check, in code-written words (TEMPLATE): which stops' openers it looked
+ * up and that it proposes no opener change, or why. Empty when it made no lookup or changed an opener.
+ */
+export function openerCheckLine(plan: TourPlan, lookups: OpenerLookup[], changedOpener: boolean, diff?: Pick<PlanDiff, "add" | "remove">): Insight | undefined {
+  if (changedOpener) return undefined;
+  // Stops that stay on the route (a dropped stop's opener no longer matters); an added city gets its idea on Apply.
+  const kept = plan.stops.filter((s) => !(diff?.remove ?? []).includes(s.stopId));
+  const byStop = lookups.filter((l, i) => kept.some((s) => sameCity(s.city.name, l.city)) && lookups.findIndex((x) => sameCity(x.city, l.city)) === i);
+  if (!byStop.length) return undefined;
+  const role = plan.artist.proxyOf?.length ? "support-slot ideas" : plan.artist.type === "person" ? "feature acts" : "openers";
+  const cities = byStop.map((l) => clean(l.city));
+  const list = cities.length < 3 ? cities.join(" and ") : `${cities.slice(0, -1).join(", ")} and ${cities.at(-1)}`;
+  const none = byStop.every((l) => l.smallerFound === false);
+  const flagged = plan.stops.filter((s) => s.opener?.oversize && byStop.some((l) => sameCity(l.city, s.city.name))).map((s) => clean(s.city.name));
+  const text = `${role[0].toUpperCase()}${role.slice(1)}: the check looked up Qloo's similar acts for ${list} and proposes no change${
+    none ? `: Qloo returned no other act within ${possessive(plan.artist.name)} size fit there` : ""}${
+    flagged.length ? `, so the "above your size fit" flag${flagged.length === 1 ? "" : "s"} on ${flagged.join(", ")} stay${flagged.length === 1 ? "s" : ""}` : ""}.`;
+  return { text, evidence: byStop.map((l) => l.evidence), kind: "template" };
+}
+
+/** The opener lookups of a recorded route check, from its receipts ("Similar acts with affinity in X"). */
+export const openerLookupsFrom = (f: Pick<FollowUp, "sources">): OpenerLookup[] =>
+  f.sources.flatMap((s) => { const m = /^Similar acts with affinity in (.+)$/.exec(s.label); return m ? [{ city: m[1], evidence: s.id }] : []; });
+
 /**
  * The route check's verdict in code-written words (TEMPLATE), built from the final proposal and the
  * cities the check scored: what changes and why, or why the route holds, with the numbers.
@@ -233,12 +265,27 @@ export function routeVerdict(plan: TourPlan, seen: City[], diff?: Pick<PlanDiff,
   if (diff && (diff.add.length || removed.length)) {
     const before = routeKm(located(plan.stops.map((x) => x.city)));
     const after = routeKm(located([...plan.stops.filter((x) => !diff.remove.includes(x.stopId)).map((x) => x.city), ...diff.add]));
-    const delta = roadKm(after - before);
+    // Rounded exactly as the rank_cities tool rounds extra_drive_km_by_road (swapFits rounds km first), so the
+    // verdict and the agent quote the same number.
+    const delta = roadKm(Math.round(after - before));
     const driving = Math.abs(delta) < 10 ? "about the same driving" : `≈ ${Math.abs(delta).toLocaleString("en")} km ${delta > 0 ? "more" : "less"} driving by road`;
     const ev = [...diff.add.map((c) => c.evidence), ...removed.map((x) => x.city.evidence)];
     if (diff.add.length && removed.length) {
       const a = diff.add[0], r = removed[0];
-      return { text: `Route check: ${clean(a.name)} scores ${s1(a.affinity)}, above ${clean(r.city.name)} (${s1(r.city.affinity)})${r.stopId === weakest.stopId ? ", the weakest stop" : ""}, and the changed route keeps every leg within a day's drive (${driving}). Proposed: swap it in.`, evidence: ev, kind: "template" };
+      // Disclose stronger cities the check scored that the proposal passed over, with their driving cost.
+      const kept = plan.stops.filter((x) => !diff.remove.includes(x.stopId)).map((x) => x.city);
+      const keptPts = located(kept);
+      const nowPts = located(plan.stops.map((x) => x.city));
+      const limit = Math.max(MAX_LEG_KM, nowPts.length > 1 ? Math.max(...legs(nowPts, bestOrder(nowPts))) : 0) + 1;
+      const stronger = seen.filter((c) => c.lat !== undefined && c.affinity > a.affinity && !plan.stops.some((x) => sameCity(x.city.name, c.name)) && !diff.add.some((d) => sameCity(d.name, c.name)))
+        .map((c) => ({ c, km: routeKm(located([...kept, c])), legOk: keptPts.length < 1 || Math.max(0, ...legs([...keptPts, { lat: c.lat!, lng: c.lng! }], bestOrder([...keptPts, { lat: c.lat!, lng: c.lng! }]))) <= limit }))
+        .filter((x) => x.legOk).sort((x, y) => y.c.affinity - x.c.affinity).slice(0, 2);
+      const names = stronger.map((x) => `${clean(x.c.name)} (${s1(x.c.affinity)})`).join(" and ");
+      const allTied = stronger.every((x) => x.c.affinity - a.affinity <= TIE);
+      const moreKm = stronger.length ? roadKm(Math.min(...stronger.map((x) => x.km)) - after) : 0;
+      const passedOver = !stronger.length ? "" : ` ${names} ${stronger.length === 1 ? "scores" : "score"} ${allTied ? "within a point of it (effectively tied)" : "higher"}${moreKm >= 10 ? ` but ${stronger.length === 1 ? "means" : "each means at least"} ≈ ${moreKm.toLocaleString("en")} km more driving` : ""}.`;
+      return { text: `Route check: ${clean(a.name)} scores ${s1(a.affinity)}, above ${clean(r.city.name)} (${s1(r.city.affinity)})${r.stopId === weakest.stopId ? ", the weakest stop" : ""}, and the changed route keeps every leg within a day's drive (${driving}).${passedOver} Proposed: swap it in.`,
+        evidence: [...ev, ...stronger.map((x) => x.c.evidence)], kind: "template" };
     }
     if (diff.add.length) return { text: `Route check: adding ${diff.add.map((c) => `${clean(c.name)} (${s1(c.affinity)})`).join(" and ")} keeps every leg within a day's drive (${driving}).`, evidence: ev, kind: "template" };
     return { text: `Proposed: drop ${removed.map((x) => `${clean(x.city.name)} (${s1(x.city.affinity)})`).join(" and ")}, the lowest room affinity on the route (${driving}).`, evidence: ev, kind: "template" };
@@ -279,6 +326,7 @@ export async function runScout(plan: TourPlan, question: string, model: AgentMod
   // What this session has seen; proposals may only use these.
   const seenCities = new Map<string, City>();
   const seenOpeners = new Map<string, Opener>();
+  const openerLookups: OpenerLookup[] = [];
   const openerPopularity = new Map<string, number | undefined>();
   /** The cities whose find_openers results contained each candidate: an opener is evidence for those cities only. */
   const openerCities = new Map<string, string[]>();
@@ -366,10 +414,12 @@ export async function runScout(plan: TourPlan, question: string, model: AgentMod
           () => recommend({ targetType: plan.artist.type, signals: plan.signals, signalLocation: city, limit: 8, ...(plan.artist.type === "person" ? { includeTags: COMEDIAN_TAGS, includeTagsOperator: "union" as const } : {}) }), `Similar acts with affinity in ${city}`);
         if (!r) return { error: `No opener candidates in ${city}.` };
         // Same rule as the pipeline: not the act, not a member of it, and (for a known act) not more popular.
-        const others = r.entities.filter((e) => !plan.signals.includes(e.id) && !isRelatedAct(e.description, plan.artist.proxyOf?.length ? plan.artist.proxyOf : [plan.artist.name]) && !unlikelyOpener(e.description, plan.artist.type === "person"));
+        const others = r.entities.filter((e) => !plan.signals.includes(e.id) && !isRelatedAct(e.description, plan.artist.proxyOf?.length ? plan.artist.proxyOf : [plan.artist.name]) && !unlikelyOpener(e.description, plan.artist.type === "person", e.name));
         const cap = plan.artist.popularity ?? (plan.artist.proxyOf?.length ? SMALL_ROOM_POPULARITY : undefined);
         const fitsAct = (e: { popularity?: number }) => cap === undefined || (e.popularity !== undefined && e.popularity <= cap);
         const openers = [...others.filter(fitsAct), ...others.filter((e) => !fitsAct(e)).sort((a, b) => (a.popularity ?? 1) - (b.popularity ?? 1))];
+        const current = plan.stops.find((s) => sameCity(s.city.name, city))?.opener?.entityId;
+        openerLookups.push({ city, evidence: r.source.id, smallerFound: others.some((e) => fitsAct(e) && e.id !== current) });
         if (!openers.length) return { evidence_id: r.source.id, city, openers: [], note: `0 opener candidates in ${city}: say so; never use another city's results for this stop.` };
         for (const e of openers) {
           if (!seenOpeners.has(e.id)) seenOpeners.set(e.id, { entityId: e.id, name: e.name, affinity: e.affinity, evidence: r.source.id, popularity: e.popularity, sizeCap: cap, oversize: !fitsAct(e) || undefined });
@@ -411,6 +461,7 @@ export async function runScout(plan: TourPlan, question: string, model: AgentMod
       first.text += `\n\nServer pre-check: the touring cities near the route, ranked with your stops (a rank_cities result you may cite): ${JSON.stringify(pre)}`;
     }
   }
+  const serverChecks = ledger.sources.length;
   let final: Record<string, any> | undefined;
   let fallbackText = "";
   for (let round = 0; round <= MAX_ROUNDS && !final; round++) {
@@ -437,6 +488,7 @@ export async function runScout(plan: TourPlan, question: string, model: AgentMod
   const { guard, withheld } = insightGuard(validIds, model.name === "scripted", {
     capacity: plan.inputs.capacity, actName: plan.artist.name, emerging: Boolean(plan.artist.proxyOf?.length),
     hotspotCities: plan.stops.filter((s) => s.city.hotspot).map((s) => clean(s.city.name)),
+    venues: venueNames(plan.stops),
   });
   // Accept the answer as a string (schema) or an object (older shape); strip stray tool markup the
   // model sometimes leaks; if no evidence list came back, use Q-ids the text itself cites.
@@ -499,7 +551,7 @@ export async function runScout(plan: TourPlan, question: string, model: AgentMod
   const duplicate = plan.stops.some((x) => x.stopId !== openerStop && x.opener?.entityId === pickedId);
   let openerPick = target && local && !tooBig && !noOp && !duplicate && !remove.includes(openerStop!) ? seenOpeners.get(pickedId) : undefined;
   // The same realism rule as the plan: no supergroup, and no actor-first person for a comedian.
-  if (openerPick && unlikelyOpener(await describedAs({ id: openerPick.entityId, name: openerPick.name }, plan.artist.type, step), plan.artist.type === "person")) openerPick = undefined;
+  if (openerPick && unlikelyOpener(await describedAs({ id: openerPick.entityId, name: openerPick.name }, plan.artist.type, step), plan.artist.type === "person", openerPick.name)) openerPick = undefined;
   const resulting = plan.stops.length - remove.length + add.length;
   const valid = (add.length || remove.length || openerPick) && resulting >= 2 && resulting <= 6;
   const role = plan.artist.proxyOf?.length ? "support slot with" : plan.artist.type === "person" ? "feature act" : "opener";
@@ -524,9 +576,30 @@ export async function runScout(plan: TourPlan, question: string, model: AgentMod
   const cityChange = Boolean(proposal && (proposal.add.length || proposal.remove.length));
   const scriptedFewer = model.name === "scripted" && !requestedAdds && cityChange && !overridden;
   const verdict = (cityChange || routeQuestion) && !scriptedFewer ? routeVerdict(plan, [...seenCities.values()], proposal) : undefined;
-  const useModel = !overridden && modelAnswer && (model.name !== "scripted" || scriptedFewer || (!verdict && !requestedAdds));
+  // On a route check the verdict is always code-written from the numbers; the agent's own words are kept as its note.
+  const useModel = !overridden && modelAnswer && !(routeQuestion && verdict) && (model.name !== "scripted" || scriptedFewer || (!verdict && !requestedAdds));
   const answer: Insight = useModel ? modelAnswer! : verdict ? { ...verdict, text: [verdict.text, openerLine].filter(Boolean).join(" "), evidence: [...new Set([...verdict.evidence, o?.evidence, o?.overlap?.evidence].filter((x): x is string => Boolean(x)))] }
     : o ? { text: `Suggested change: ${openerLine}`, evidence: [o.evidence, o.overlap?.evidence].filter((x): x is string => Boolean(x)), kind: "template" }
     : { text: "The scout could not support an answer with the data it found.", evidence: [], kind: "template" };
-  return { kind: "agent", question, answer, checks: checks.length ? checks : undefined, pins, proposal, sources: ledger.sources, askedAt: new Date().toISOString(), by: model.name };
+  const openerCheck = routeQuestion ? openerCheckLine(plan, openerLookups, Boolean(proposal?.opener), proposal) : undefined;
+  if (openerCheck) checks.push(openerCheck);
+  // The agent's own words, kept visible when the verdict shown is code-written: its first sentence,
+  // guarded again on its own, or the guard's reason if its answer was withheld. Never for a scripted agent.
+  const ai = model.name !== "scripted";
+  const note = ai && modelAnswer && answer !== modelAnswer ? agentOneLine(modelAnswer, guard) : undefined;
+  const noteWithheld = ai && !modelAnswer && answerText ? withheld.find((x) => x.field === "answer")?.reason : undefined;
+  return { kind: "agent", question, answer, checks: checks.length ? checks : undefined, pins, proposal, sources: ledger.sources, askedAt: new Date().toISOString(), by: model.name, serverChecks: serverChecks || undefined,
+    ...(cityChange ? { proposedBy: overridden ? "server" as const : "agent" as const } : {}),
+    ...(note ? { agentNote: note } : {}), ...(noteWithheld ? { agentNoteWithheld: noteWithheld } : {}) };
 }
+
+/** The first sentence (two when the first is short) of the agent's answer (at most ~220 characters), re-guarded on its own. */
+export function agentOneLine(item: Insight, guard: (field: string, value: unknown) => Insight | undefined): Insight | undefined {
+  const text = item.text.replace(/\s+/g, " ").trim();
+  const parts = text.split(/(?<=[.!?])\s+(?=[A-Z])/);
+  const first = parts[0].length < 60 && parts[1] ? `${parts[0]} ${parts[1]}` : parts[0];
+  const line = first.length > 220 ? `${first.slice(0, 217).replace(/\s+\S*$/, "")}…` : first;
+  const cited = item.evidence.filter((id) => line.includes(id));
+  return guard("agent note", { text: line, evidence: cited.length ? cited : item.evidence });
+}
+

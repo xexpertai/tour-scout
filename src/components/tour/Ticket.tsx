@@ -1,6 +1,7 @@
 "use client";
 
-import { tidyTag, venueTown } from "@/lib/text";
+import { isTasteName, tidyTag, venueTown } from "@/lib/text";
+import { isKnownSupergroup, smallRoomTour, soundsLarge } from "@/lib/tour/realism";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Insight } from "@/lib/guard";
@@ -71,9 +72,18 @@ const Flame = () => (
  * One stop as a ticket stub: number, city and score up top; a short "why"; rooms and the opener
  * side by side; the pitch in its own sheet. Arena-scale acts get no room or pitch suggestions.
  */
-export function StopTicket({ stop, active, writing, emerging = false, arena = false, comedian = false, rank, of }: {
-  stop: StopView; active: boolean; writing: boolean; emerging?: boolean; arena?: boolean; comedian?: boolean; rank?: number; of?: number;
+/** Shared tastes that every opener on the plan has (2+ openers): they say nothing about one stop, so tickets skip them. */
+export function commonShared(stops: { opener?: { overlap?: { shared: string[] } } }[]): Set<string> {
+  const lists = stops.map((s) => s.opener?.overlap?.shared.filter(isTasteName)).filter((l): l is string[] => Boolean(l?.length));
+  if (lists.length < 2) return new Set();
+  return new Set(lists[0].filter((t) => lists.every((l) => l.includes(t))));
+}
+
+export function StopTicket({ stop, active, writing, emerging = false, arena = false, comedian = false, rank, of, capacity, common }: {
+  stop: StopView; active: boolean; writing: boolean; emerging?: boolean; arena?: boolean; comedian?: boolean; rank?: number; of?: number; capacity?: [number, number];
+  common?: Set<string>;
 }) {
+  const small = smallRoomTour(capacity, emerging);
   const n = stop.order ?? stop.rank;
   const [more, setMore] = useState(false);
   const [sheet, setSheet] = useState(false);
@@ -84,7 +94,9 @@ export function StopTicket({ stop, active, writing, emerging = false, arena = fa
   const pitchTo = emerging && stop.opener
     ? { name: `${clean(stop.opener.name)}'s team or agent`, town: stop.venues[0] ? `or ${clean(stop.venues[0].name)} booking` : undefined }
     : stop.venues[0] ? { name: stop.venues[0].name, town: venueTown(stop.venues[0]) } : undefined;
-  const shared = stop.opener?.overlap?.shared.slice(0, 3) ?? [];
+  const allShared = stop.opener?.overlap?.shared.filter(isTasteName) ?? [];
+  const shared = allShared.filter((t) => !common?.has(t)).slice(0, 3);
+  const onlyCommon = allShared.length > 0 && shared.length === 0;
   return (
     <article id={`stop-${stop.stopId}`} data-stop={stop.stopId} aria-label={`Stop ${n}: ${clean(stop.city.name)}`}
       className={`ticket slide-in scroll-mt-28 overflow-hidden rounded-2xl border bg-surface transition-colors ${active ? "border-neon" : "border-line"}`}>
@@ -120,6 +132,9 @@ export function StopTicket({ stop, active, writing, emerging = false, arena = fa
                     <li key={v.entityId} className="flex items-baseline justify-between gap-3">
                       <span className="min-w-0">
                         <span className="block break-words font-medium">{clean(v.name)}</span>
+                        {small && soundsLarge(v.name) && (
+                          <span className="block text-xs text-sample" title="Qloo has no venue capacities; this is a name-based hint">May be bigger than your {capacity ? `${capacity[0]}–${capacity[1]}-cap` : "small-room"} target (the name suggests a theatre-size hall)</span>
+                        )}
                         {(v.address || v.area) && <span className="block break-words text-xs text-muted">{v.address ?? v.area}</span>}
                       </span>
                       {v.affinity !== undefined && <span className="shrink-0 font-display text-lg tabular-nums text-muted" title="Qloo affinity, 0–100">{Math.round(v.affinity * 100)}</span>}
@@ -140,14 +155,24 @@ export function StopTicket({ stop, active, writing, emerging = false, arena = fa
                 {emerging ? "Support slot to pitch for" : arena ? "Fans here also like" : comedian ? "Feature act idea" : "Opener idea"} <Chip kind={sample ? "sample" : "qloo"} /><Cites ids={[stop.opener.evidence]} />
               </h4>
               <p className="mt-1 font-display text-3xl uppercase leading-none">{clean(stop.opener.name)}</p>
-              {stop.opener.oversize && (
+              {isKnownSupergroup(stop.opener.name) ? (
                 <p role="note" className="mt-2 rounded-md border border-sample/60 px-2 py-1 text-xs text-sample">
-                  Above your size fit{stop.opener.popularity !== undefined && stop.opener.sizeCap !== undefined ? ` (Qloo popularity ${stop.opener.popularity.toFixed(2)} vs ${stop.opener.sizeCap.toFixed(2)})` : ""}: no smaller act with affinity here, so this is the closest match. The route check looks for a better one.
+                  A supergroup: it draws like a headliner, so treat this as a long shot (current runs skip supergroups).
+                </p>
+              ) : stop.opener.oversize && (
+                <p role="note" className="mt-2 text-xs text-sample"
+                  title="No smaller act with affinity here, so this is the closest match; the route check says whether it found a better one.">
+                  Above your size fit{stop.opener.popularity !== undefined && stop.opener.sizeCap !== undefined ? ` (Qloo popularity ${stop.opener.popularity.toFixed(2)} vs ${stop.opener.sizeCap.toFixed(2)})` : ""}: the closest match here.
                 </p>
               )}
               {shared.length > 0 && (
                 <p className="mt-2 text-sm text-muted">
-                  Shared tastes: <span className="text-ink">{shared.map((x) => tidyTag(clean(x))).join(", ")}</span> <Cites ids={[stop.opener.overlap!.evidence]} />
+                  Shared tastes{common?.size ? " (beyond those every act here shares)" : ""}: <span className="text-ink">{shared.map((x) => tidyTag(clean(x))).join(", ")}</span> <Cites ids={[stop.opener.overlap!.evidence]} />
+                </p>
+              )}
+              {onlyCommon && (
+                <p className="mt-2 text-sm text-muted">
+                  Shared tastes: only the ones every act on this plan shares <Cites ids={[stop.opener.overlap!.evidence]} />
                 </p>
               )}
             </div>

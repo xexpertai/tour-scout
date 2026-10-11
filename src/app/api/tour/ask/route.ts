@@ -3,20 +3,18 @@ import { LlmError } from "@/lib/llm";
 import { clientKey, limitedResponse, take } from "@/lib/limits";
 import { NDJSON_HEADERS, ndjsonStream } from "@/lib/ndjson";
 import { savePlan } from "@/lib/store";
-import { askCity } from "@/lib/tour/followup";
+import { ownerOf, withOwnerCookie } from "@/lib/owner";
+import { askCity, isQuickQuestion } from "@/lib/tour/followup";
 import { MAX_AGENT_QUESTIONS, claudeAgentModel, runScout, scriptedAgentModel, type AgentModel } from "@/lib/tour/scout";
-import { planForRequest } from "@/lib/tour/sources";
+import { ownedCopy, planForRequest } from "@/lib/tour/sources";
 import type { AskEvent, FollowUp, TourPlan } from "@/lib/tour/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
-/** "Why not Denver?" and similar take the fast deterministic path; anything else goes to the scout. */
-const QUICK = /^\s*(?:why\s+not|what\s+about|how\s+about)\s+([\p{L} .'-]{2,40}?)\s*\??\s*$/iu;
-
 async function* answer(plan: TourPlan, question: string, forked: boolean, signal: AbortSignal): AsyncGenerator<AskEvent> {
   if (forked) yield { type: "forked", planId: plan.id };
-  if (QUICK.test(question)) {
+  if (isQuickQuestion(question)) {
     yield { type: "checking", label: "Scout is ranking that city against your stops…" };
     yield { type: "answer", followUp: await askCity(plan, question) };
     return;
@@ -52,12 +50,14 @@ export async function POST(req: Request) {
   const found = await planForRequest(body);
   if (!found) return Response.json({ error: "This plan is no longer available." }, { status: 404 });
 
-  const plan = found.plan;
-  return new Response(ndjsonStream(answer(plan, question, found.forked, req.signal), async (e) => {
+  // A question on someone else's plan (a share link) goes on a copy; the original stays as shared.
+  const owner = ownerOf(req);
+  const { plan, forked } = await ownedCopy(found, owner);
+  return new Response(ndjsonStream(answer(plan, question, forked, req.signal), async (e) => {
     // Each answer is kept on the plan, so shared links and later applies can see it.
     if (e.type === "answer") {
       plan.followUps = [...(plan.followUps ?? []), e.followUp as FollowUp];
       await savePlan(plan);
     }
-  }), { headers: NDJSON_HEADERS });
+  }), { headers: withOwnerCookie(NDJSON_HEADERS, owner) });
 }

@@ -256,6 +256,7 @@ export const Close = ({ start }: { start: number }) => {
       <div style={{ marginTop: 48, fontFamily: sans, fontSize: 40, color: C.ink, lineHeight: 1.6 }}>
         {[0, 1].map((i) => <div key={i} style={{ minHeight: 64, opacity: rows[i] ? prog(t, hit + 0.5 + i * 0.25, 0.4) : 0 }}>{rows[i] ?? "\u00a0"}</div>)}
         <div style={{ opacity: prog(t, hit + 0.6 + rows.length * 0.25, 0.4), color: C.muted, marginTop: 10 }}>Built by {CONFIG.builtBy}</div>
+        <div style={{ opacity: prog(t, hit + 0.8 + rows.length * 0.25, 0.4), color: C.muted, fontSize: 28, marginTop: 6 }}>Built with AI coding assistance · synthetic voiceover (Kokoro TTS)</div>
       </div>
      </AbsoluteFill>
       <AbsoluteFill style={{ background: "#fff", opacity: flash }} />

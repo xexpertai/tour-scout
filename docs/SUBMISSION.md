@@ -6,7 +6,7 @@ Draft for qloo.devpost.com (deadline 30 Oct 2026, 11:45 pm EDT; target submit 29
 
 - [ ] Working app integrating the Qloo API as an agentic tool: yes (Phase A pipeline plus the "Ask the scout" agent)
 - [x] Hosted externally, end to end: https://tour-scout-196979752200.us-central1.run.app (Google Cloud Run; see `docs/DEPLOY.md`)
-- [ ] Public repo with source and instructions: `<REPO_URL>`
+- [ ] Public repo with source and instructions: https://github.com/xexpertai/tour-scout
 - [ ] Open-source license shown in the repo's About section: MIT
 - [ ] Text description of features and the Qloo integration (below)
 - [ ] Optional video (not required): `<VIDEO_URL>`; built by `scripts/video/make-story.sh`
@@ -30,15 +30,17 @@ Tour Scout
 
 ## Elevator pitch (tagline, ≤ 200 characters)
 
-> Find your fans before you book the room. Tour Scout uses Qloo's taste graph to plan a tour for indie musicians and comedians: fan hotspots, rooms, openers and booker pitches, each with its source.
+> Plan a tour before you have listeners there. Tour Scout uses Qloo's taste graph to find an indie act's fans, rooms, openers and booker pitches, then an agent checks the route.
 
-(196 characters)
+(175 characters)
 
 ## About the project
 
+**Plan a tour before you have listeners there.** Listener maps need listeners first. Tour Scout starts from taste instead: Qloo's graph shows where people who would like an act are (a new act can plan from the artists it sounds like), which rooms they go to and who else they like. Then the route-check agent tests the plan with Qloo tools and proposes at most one change.
+
 ### Inspiration
 
-Independent musicians and comedians usually route tours on guesswork: a city they played before, a friend's venue, a promoter's offer. Big acts have agents and data teams. A small act pays for an empty room directly, in travel, guarantees and a night that doesn't build a following.
+Independent musicians and comedians usually route tours on guesswork: a city they played before, a friend's venue, a promoter's offer. Big acts have agents and data teams. A small act pays for an empty room directly, in travel, guarantees and a night that doesn't build a following. In a 2024 survey of 1,700 artists by the studio chain Pirate, 72% made no profit from recent touring and 24% made a loss ([Hypebot](https://www.hypebot.com/hypebot/2024/07/musicians-struggle-to-profit-from-live-shows-survey-reveals.html)); in Ditto Music's 2025 survey of 1,500 independent artists, 82.1% said they can't afford to tour ([Ditto Music](https://press.dittomusic.com/82-of-independent-artists-cant-afford-to-tour-in-2025)). Better cities can't fix costs, but they lower the odds of an empty room.
 
 The question they need answered is a taste question: *where are the people who like this kind of act, which rooms do those people go to, and who else do they like?* Qloo's graph links artists, comedians, places, brands and films through real-world audience affinity, which makes that question answerable. Without Qloo there's nothing to rank.
 
@@ -57,7 +59,7 @@ Type an act, or tap one of three demo posters that open instantly. The signature
    - an opener no bigger than the act on Qloo or, for a new act, a support slot on a small-room act (popularity ≤ 0.92: Mikaela Davis, Squirrel Flower, Half Waif, Tomberlin, Frances Quinlan), never one of its members and never the same act twice. When no candidate with local affinity is small enough, the closest is shown with a visible "above your size fit" flag;
    - a pitch email a booker could receive today: addressed to the named room, plain words, a clear ask, and [dates] / [draw] / [ticket price] / [links] to fill in.
 5. **Profiles the fans in aggregate:** taste tags, over/under-index by age and gender, the films they also like, and a **sponsor match** from Qloo's brand graph (Onnit, Vuori, Chubbies for Joe List; Stetson, Tecovas for S.G. Goodman).
-6. **Checks the plan with an agent.** The plan itself is deterministic and auditable: code decides every Qloo call. When it is drawn, an **agent route check** (Claude Haiku 4.5 with Qloo tools) runs by itself: it tests the weakest stop against the cities within a day's drive, can suggest a better opener or support slot, shows a numbered tool trace, and proposes at most one change, or says the route holds and why. You apply a proposal with one tap, and can keep asking. The server accepts a proposal only if every city and opener came from that session's tool results, no added city breaks the drivable route, no opener breaks the size rule (not bigger than the act; for a new act, Qloo popularity ≤ 0.92), and every cited Q-id is real.
+6. **Checks the plan with an agent.** The plan itself is deterministic and auditable: code decides every Qloo call. When it is drawn, an **agent route check** (Claude Haiku 4.5 with Qloo tools) runs by itself: it tests the weakest stop against the cities within a day's drive, can suggest a better opener or support slot, shows a numbered tool trace (split into the server's standard check, the Qloo requests the agent chose itself, and the verdict), and proposes at most one change, or says the route holds and why. If the agent misses a stronger city within a day's drive, the server makes that proposal itself and the card says the server made it. The verdict sentence is written by code from the numbers; next to it, the card shows the agent's own one-line reason (labelled AI, or the guard's reason if it was withheld). You apply a proposal with one tap, and can keep asking. The server accepts a proposal only if every city and opener came from that session's tool results, no added city breaks the drivable route, no opener breaks the size rule (not bigger than the act; for a new act, Qloo popularity ≤ 0.92), and every cited Q-id is real.
 7. **Shows every source.** Each value is labelled QLOO, AI, TEMPLATE or GENERAL and links to the exact Qloo request (a "Q-number"). Plans export to a share link, CSV and print/PDF.
 
 It also works for **stand-up comedians**: comedy clubs, with club comics as openers (Joe List: Washington DC, Philadelphia, New York, Providence, Boston; a rooms-led plan, as none of his hotspots is near a touring city). **Emerging acts** that Qloo doesn't know yet are planned from the fans of 1–3 artists they sound like, and every screen says so (the lead demo, Maya, is a fictional first-tour act). **Arena-scale acts** get a plan of where their fans cluster, with no room or pitch suggestions (Qloo's room data is club and theatre scale).
@@ -79,7 +81,7 @@ It also works for **stand-up comedians**: comedy clubs, with club comics as open
   | `recommend` (brand, movie) | Cross-domain taste for show theme and merch |
 
 - **Two-phase agent.**
-  - *Phase A:* about 25–29 Qloo calls per tour, planned in code (no model needed to decide them), run concurrently and streamed; each stop appears as soon as its data lands.
+  - *Phase A:* about 25–38 Qloo requests per plan (the demos: 29, 38 and 29), plus 9–15 for a route check, planned in code (no model needed to decide them), run concurrently and streamed; each stop appears as soon as its data lands.
   - *Phase B:* one Claude Haiku 4.5 call that sees only the evidence ledger (values plus Q-ids) and writes the "why", the pitches, theme, merch and risks, streamed per stop.
   - *Ask the scout:* a tool-using agent (up to 4 rounds) over six Qloo-backed tools, ending in a validated `propose_change`.
 - **A deterministic guard** withholds model text that:
@@ -91,7 +93,7 @@ It also works for **stand-up comedians**: comedy clubs, with club comics as open
   - names a city that isn't on the route.
 
   Withheld items are counted on screen. Citations to non-existent Q-ids are dropped.
-- **Stack:** Next.js 16, React 19, TypeScript, Tailwind 4, MapLibre GL with OpenFreeMap vector tiles (free, no key) and OpenStreetMap's Nominatim for neighbourhood names, the Anthropic SDK, Node 22, and Docker for a container host. 63 tests, including adapter tests against recorded live Qloo responses.
+- **Stack:** Next.js 16, React 19, TypeScript, Tailwind 4, MapLibre GL with OpenFreeMap vector tiles (free, no key) and OpenStreetMap's Nominatim for neighbourhood names, the Anthropic SDK, Node 22, and Docker for a container host. An automated test suite (`npm test`), including adapter tests against recorded live Qloo responses.
 
 ### Request → result (redacted; live Maya tour from fans of Joanna Sternberg, US, 5 stops)
 
@@ -102,7 +104,7 @@ Q6   where_popular   GET /v2/insights  filter.type=urn:heatmap, signal.interests
      → 20 hotspot cells (~30 km each), near touring cities: New York, Boston, Burlington, Philadelphia, Albany, Portland ME, Northampton, Hudson Valley.
        1 cell far from any touring city is counted, not scheduled.
 
-Q14  recommend       GET /v2/insights  filter.type=urn:entity:place, signal.interests.entities=<Joanna Sternberg>,
+Q13  recommend       GET /v2/insights  filter.type=urn:entity:place, signal.interests.entities=<Joanna Sternberg>,
                                        filter.location.query=Boston, Massachusetts,
                                        filter.tags=urn:tag:category:place:live_music_venue, take=6
      → O'Briens Pub 94.4 · Midway Café 91.5 · Club Passim 90.1 · The Jungle Community Music Club 89.8   ⇒ Boston room affinity 94.4
@@ -112,13 +114,13 @@ Q7–Q14 (the same request for each candidate city)
      → New York 95.9 · Boston 94.4 · Burlington 94.1 · Philadelphia 93.5 · Albany 88.7 · Portland ME 88.5 · Northampton 87.6
        ⇒ stops: the 5 best within a day's drive of each other, routed Boston → Burlington → Albany → New York → Philadelphia
 
-Q21  where_popular   GET /v2/insights  filter.type=urn:heatmap, filter.location.query=Boston, Massachusetts, take=10
+Q16  where_popular   GET /v2/insights  filter.type=urn:heatmap, filter.location.query=Boston, Massachusetts, take=10
      → strongest cell named via OpenStreetMap: Church Green
 
-Q16  recommend       GET /v2/insights  filter.type=urn:entity:artist, signal.location.query=Boston, Massachusetts, take=8
+Q18  recommend       GET /v2/insights  filter.type=urn:entity:artist, signal.location.query=Boston, Massachusetts, take=8
      → Squirrel Flower (first candidate that is not the act, not a member of it, and within the support-slot size rule: Qloo popularity ≤ 0.92)
 
-Q26  compare_audiences GET /v2/analysis/compare  a=<Joanna Sternberg>, b=<Squirrel Flower>
+Q29  compare_audiences GET /v2/analysis/compare  a=<Joanna Sternberg>, b=<Squirrel Flower>
      → shared taste tags: Indie - Folk, Loyal, Intimate, Introspective, Expressive, Raw
 ```
 <!-- request-excerpt:end -->
@@ -134,7 +136,7 @@ Q26  compare_audiences GET /v2/analysis/compare  a=<Joanna Sternberg>, b=<Squirr
 
 ### Accomplishments we're proud of
 
-- Routes you can actually drive, in rooms that fit a small act: Maya's Boston → Burlington → Albany → New York → Philadelphia run through O'Briens Pub, Monkey House, Fuze Box, The Broadway and Ortlieb's, where the agent route check proposes Washington, DC over Albany (stronger, still drivable); Joe List's Washington DC → Boston club run through DC Comedy Loft, Helium, EastVille Comedy Club, Comedy Connection and Laugh Boston. All from Qloo data, with every claim linked to its request.
+- Routes you can actually drive, in rooms that fit a small act: Maya's Boston → Burlington → Albany → New York → Philadelphia run through O'Briens Pub, Monkey House, Fuze Box, The Broadway and Ortlieb's, where the agent route check proposes Providence over Albany (stronger, still drivable, less driving); Joe List's Washington DC → Boston club run through DC Comedy Loft, Helium, EastVille Comedy Club, Comedy Connection and Laugh Boston. All from Qloo data, with every claim linked to its request.
 - An agent that proposes, not just chats, and a server that refuses any proposal the agent didn't earn from its own tool results.
 - Honesty built into the product:
   - affinity is never presented as ticket demand;
@@ -153,7 +155,7 @@ Q26  compare_audiences GET /v2/analysis/compare  a=<Joanna Sternberg>, b=<Squirr
 - Dates and routing costs: combine affinity with drive times and a calendar.
 - Support-slot discovery for emerging acts: which touring acts with overlapping fans pass through your city.
 - More countries' touring-city lists, and a booker-facing share view.
-- Pilots with a few independent acts and comedy managers.
+- Pilots with a few independent acts and comedy managers. It has not been tested with real acts yet; feedback goes to the repo's issues.
 
 ### What it doesn't do (limitations)
 
@@ -164,6 +166,7 @@ Q26  compare_audiences GET /v2/analysis/compare  a=<Joanna Sternberg>, b=<Squirr
 - **Broad venue tag.** It includes some galleries and bars. Every room is a suggestion to check.
 - **Taste tags vary by act.** Some acts get few tags, and the plan says "Limited data".
 - **Aggregate only.** No personal data is sent to Qloo, and nothing is said about any individual fan.
+- **No outcome evidence yet.** A small check against two acts' archived show lists (10 and 16 shows) was inconclusive: each demo route included 1 of its 5 stops where the act played, which is also the most any route built from the plan's scored candidates could have matched, and random picks do about as well (`docs/BACKTEST.md`).
 
 ## Built with
 
@@ -174,14 +177,14 @@ Q26  compare_audiences GET /v2/analysis/compare  a=<Joanna Sternberg>, b=<Squirr
 ## Try it out
 
 - Demo: https://tour-scout-196979752200.us-central1.run.app. Tap a demo poster for an instant captured run (its scout suggestion marked "instant" also replays at no cost), or type any artist or comedian for a live run (rate-limited).
-- Code: `<REPO_URL>` (MIT)
+- Code: https://github.com/xexpertai/tour-scout (MIT)
 - Video (optional): `<VIDEO_URL>`
 
 ## Gallery (from `docs/screenshots/`, live data, no credentials or personal data)
 
 1. `route.png`: Maya's Northeast route (fans of Joanna Sternberg) with stop tickets
 2. `fan-map.png`: the fan map lighting up (hotspots while cities are scored)
-3. `scout-answer.png`: the agent route check's verdict (Maya: swap Albany for Washington, DC, stronger and still drivable)
+3. `scout-answer.png`: the agent route check's verdict (Maya: swap Albany for Providence, stronger, still drivable and less driving)
 4. `route-comedian.png`: Joe List, stand-up (a rooms-led plan; the route check says it holds)
    `route-americana.png`: S.G. Goodman, a Southern club run
 5. `receipts.png`: "Show receipts" on, every value with its Q-id
@@ -193,7 +196,7 @@ Q26  compare_audiences GET /v2/analysis/compare  a=<Joanna Sternberg>, b=<Squirr
 
 | Criterion | What judges see |
 | --- | --- |
-| Technological implementation | Official Qloo harness workflows; two-phase agent with streaming; tool-using scout with server-validated proposals; deterministic guard; 63 tests, including adapter tests against recorded live responses |
+| Technological implementation | Official Qloo harness workflows; two-phase agent with streaming; tool-using scout with server-validated proposals; deterministic guard; an automated test suite (`npm test`), including adapter tests against recorded live responses |
 | Design | The fan map lighting up, then the route drawing itself; gig-poster UI; compact stop tickets; mobile-first layout with a scout bottom sheet; provenance as quiet dots with a "Show receipts" switch; instant demo flyers |
 | Potential impact | A real, underserved user (indie acts and comedians without data teams); useful from the first tap; extends to promoters and bookers |
 | Quality of the idea | A taste question ("where are the people who like this act?") that only Qloo's cross-domain graph answers, turned into an action (a route, rooms, openers and a pitch) |

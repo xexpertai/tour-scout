@@ -105,8 +105,10 @@ export function nearestMarket(point: { lat: number; lng: number }, maxKm = SNAP_
 
 /** A market by display name or query ("Portland, OR", "portland, oregon", "Chicago"). */
 export function findMarket(name: string): Market | undefined {
-  const key = name.trim().toLowerCase();
-  return MARKETS.find((x) => x.name.toLowerCase() === key || x.query.toLowerCase() === key);
+  // "Portland ME", "portland, me" and "Portland, Maine" all name the same market.
+  const norm = (s: string) => s.toLowerCase().replace(/[,.]/g, " ").replace(/\s+/g, " ").trim();
+  const key = norm(name);
+  return MARKETS.find((x) => norm(x.name) === key || norm(x.query) === key);
 }
 
 export const marketSlug = (name: string) => `market:${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
