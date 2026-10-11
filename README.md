@@ -8,6 +8,24 @@
 
 *Replay of a run captured from live Qloo data on 7 Oct 2026. Maya is a fictional demo act planned from the fans of Joanna Sternberg. The GIF ends on the agent's swap: Albany (88.7) out, Providence (91.3) in.*
 
+### Check it yourself in 5 minutes
+
+No sign-up. A demo poster replays a run captured from live Qloo data in about 10 seconds (the live run took 47 s), so watching one costs nothing. Apply and your own searches run live.
+
+| Time | Do this | You should see | What it shows |
+| --- | --- | --- | --- |
+| 0:00 | Open the [app](https://tour-scout-196979752200.us-central1.run.app) and tap the **Maya** poster | The fan map blooms, 7 cities get scores, and the route draws: Boston → Burlington → Albany → New York → Philadelphia | The plan starts from where the fans are (Qloo's fan map), not from listener counts |
+| 0:30 | Wait for the **route check** in the dock (a bottom sheet on phones) | A numbered trace: 7 server requests, then 8 Qloo requests the agent chose. Then a proposal: Providence (91.3) for Albany (88.7), still drivable, about 130 km less driving | An agent tests the plan with Qloo tools and earns its one proposal |
+| 1:30 | Tap **Apply to my tour** | The route redraws through Providence, saved as your own copy | A proposal is one tap from a new plan |
+| 2:30 | Flip **Show receipts**, then tap any Q-number | Every value carries QLOO, AI, TEMPLATE or GENERAL and the exact Qloo request behind it | Nothing on screen is uncited |
+| 3:30 | Back to the start; tap **Joe List** (stand-up) | Comedy clubs, openers flagged "above your size fit", and a route check that says the route **holds** | The agent does not change things for show |
+| 4:30 | Optional, offline: `npm ci && npm run eval` | The table in [docs/EVALUATION.md](docs/EVALUATION.md) | The claims below, re-checked without any API call |
+
+**Evidence so far, with its limits:**
+- **The product keeps its promises on all three demo plans** ([docs/EVALUATION.md](docs/EVALUATION.md), offline): 177 of 177 Qloo values cite a real request, 48 of 48 AI sentences cite real requests, 12 of 12 legs are within a day's drive, 15 of 15 openers fit the size rule or carry the flag, and the 3 recorded route checks pass 14 of 14 independent re-checks.
+- **The guard is a second line, not a proof.** On a held-out set of 25 overclaims it had not seen, it withheld 14 and wrongly withheld 1 of 25 ordinary sentences. The misses are listed.
+- **Outcomes are not shown yet.** A check against two acts' past show lists was inconclusive ([docs/BACKTEST.md](docs/BACKTEST.md)), and no real act has used it yet.
+
 It finds the act's fan hotspots across a country, scores each nearby city by the live rooms that audience favours, finds the neighbourhood where fans cluster, suggests an opener (or, for a new act, a support slot) whose audience shares their tastes, and drafts a pitch for every stop. It works in two layers: **a deterministic plan you can audit** (every Qloo call is planned in code, and every number cites its request), then **an agent route check** that runs Qloo tools to test that plan and proposes at most one revision, which the server verifies against the agent's own numbers before you apply it with a tap. If the agent misses a stronger city within a day's drive, the server proposes that swap itself and the card says so.
 
 Every number on screen is labelled **QLOO** (returned by Qloo), **AI** (model text citing Qloo evidence), **TEMPLATE** (text filled in by code), or **GENERAL** (model text with no Qloo support). Each label links to the exact Qloo request behind it.
@@ -45,6 +63,8 @@ Independent musicians, comedians and their managers usually route tours by guess
 - **For:** independent musicians and comedians booking their own first or second run of club dates (100–500-capacity rooms), and the small managers who route for them.
 - **The stakes are real money.** In a 2024 survey of 1,700 artists by the rehearsal-studio chain Pirate, 72% said they made no profit from recent touring and 24% operated at a loss ([Hypebot, 19 Jul 2024](https://www.hypebot.com/hypebot/2024/07/musicians-struggle-to-profit-from-live-shows-survey-reveals.html)). In Ditto Music's January 2025 survey of 1,500 independent artists, 82.1% said they can't afford to tour and 74.8% had never toured ([Ditto Music](https://press.dittomusic.com/82-of-independent-artists-cant-afford-to-tour-in-2025)). A tour that picks better cities can't fix costs, but it lowers the odds of an empty room.
 - **What it replaces:** today the data an act has for routing is its own listener map. Spotify for Artists shows the top cities where an act's music is streamed, and Spotify suggests listener data "can help you figure out where to tour" ([Spotify for Artists](https://artists.spotify.com/blog/how-to-read-your-spotify-for-artists-data)). That needs listeners first, and it can't name a room, an opener or a booker pitch. Tour Scout starts from taste instead, so a new act can plan from the artists it sounds like, and every stop comes with rooms, an opener or support-slot idea, and a draft pitch.
+- **What one run hands the act** (counted from the three demo plans, each captured live in 44–50 s): 5 stops with every leg drivable; 17–20 named rooms; the neighbourhood where fans cluster in each stop; an opener or support-slot idea per stop with the taste tags its audience shares; 5 booker pitches with blanks for dates, draw and price; and sponsor leads from the brands the audience favours. Every item cites the Qloo request behind it, so a manager can check it before sending anything.
+- **Who else could use it:** a small manager or booking agent routing several acts, and (as a next step, not built) the reverse view for a room: which touring acts fit its audience.
 - **What it does not do:** it doesn't forecast attendance or ticket sales, and it has not yet been tested with real acts. If you tour or book shows, [tell us what it got right or wrong](https://github.com/xexpertai/tour-scout/issues).
 
 ## What makes it Qloo-powered
@@ -92,7 +112,7 @@ Ask the scout — tool-using agent (Claude Haiku 4.5, up to 4 rounds)
 
 ### Route order
 
-**Openers and support slots are sized to the act.** An opener is chosen from acts no more popular on Qloo than the act; when no act with local affinity is that small, the closest one is shown with a visible "above your size fit" flag (Joe List's demo shows four). In emerging-act mode the new act pitches for a *support slot* on another act's show, so that act may be bigger, but not beyond small rooms: its Qloo popularity must be at most 0.92. From the demo data, acts that tour 100–500-capacity rooms sit at about 0.56–0.90 (Joanna Sternberg 0.56, Mikaela Davis 0.77, Tomberlin 0.90), theatre-level acts at 0.96 and up. Qloo has no venue capacities, so this popularity line is the proxy for "fits your room target". The agent can never swap to a bigger act than a stop's current one.
+**Openers and support slots are sized to the act.** An opener is chosen from acts no more popular on Qloo than the act; when no act with local affinity is that small, the closest one is shown with a visible "above your size fit" flag (Joe List's demo shows four). In emerging-act mode the new act pitches for a *support slot* on another act's show, so that act may be bigger, but not beyond small rooms: its Qloo popularity must be at most 0.92. From the demo data, acts that tour 100–500-capacity rooms sit at about 0.56–0.91 (Joanna Sternberg 0.56, Mikaela Davis 0.78, Tomberlin 0.91), theatre-level acts at 0.96 and up. Qloo has no venue capacities, so this popularity line is the proxy for "fits your room target". The agent can never swap to a bigger act than a stop's current one.
 
 **The route is a drivable run, not a zig-zag.** Tour Scout works in the region where most of the act's fan hotspots sit (or around an optional starting city) and scores up to three more cities than the stops asked for: the hotspot cities in that region first, then, only when those don't fill the list, the touring cities nearest the region's anchor (the hotspot city with the most hotspots around it, or your starting city); if the list is still short, cities with rooms this audience favours. It then picks the strongest stops whose driving order has no leg over 400 km straight-line (about 500 km, about 6 h by road). Hotspots elsewhere are named as "a second run", and a strongly scored city too far from the route is marked "outside this run" with its distance (Joe List's demo: Austin). If fewer strong cities fit, the plan has fewer stops and says so. The order is the shortest open path through the stops (exact for up to 8, 2-opt beyond), so it never crosses itself. Scores are shown as a fit rank ("#2 of 7") with Qloo's room affinity beside it, because one audience's room affinities sit close together; the plan says when stops are effectively tied.
 
@@ -241,7 +261,7 @@ docker run -p 8080:8080 -v tour-scout-data:/data -e QLOO_API_KEY -e CLAUDE_API_K
 
 **Demo presets** are captured live runs in `public/presets/`. Recapture them with `LLM_PROVIDER=claude npm run presets:capture [slug…]`; a live capture costs 29–38 Qloo requests and one model call per preset, plus 9–15 requests for the recorded route check. `npm run presets:recheck` re-applies the current answer rules (guard, code-written verdict, tie note) to the recorded route checks without a model call; it never edits the model's words, only keeps or replaces an answer.
 
-**Checks:** `npm test` (an automated suite: guard, pipeline, routing, scout agent, apply, store, CSV, limits, adapter tests against recorded live Qloo responses in `tests/fixtures/`, and checks that the docs match the captured data and the deploy config), `npm run lint`, `npm run typecheck` (generates Next route types first, so it works on a fresh clone), `npm run build`.
+**Checks:** `npm test` (an automated suite: guard, pipeline, routing, scout agent, apply, store, CSV, limits, adapter tests against recorded live Qloo responses in `tests/fixtures/`, and checks that the docs match the captured data and the deploy config), `npm run eval` (the offline claims evaluation in [docs/EVALUATION.md](docs/EVALUATION.md)), `npm run lint`, `npm run typecheck` (generates Next route types first, so it works on a fresh clone), `npm run build`.
 
 ## Screens
 
@@ -287,7 +307,7 @@ What a plan does **not** establish:
 - **Neighbourhood names are approximate.** They come from reverse-geocoding the centre of the strongest Qloo map cell, so a cell can straddle areas.
 - **Coverage varies by country and by act.** Small or very new acts may need emerging-act mode. Arena-scale acts (Qloo popularity ≥ 0.999) still get a plan of where their fans are, but the suggested rooms are clubs and theatres, not arenas, and the plan says so.
 - **New stops get templated text.** Stops added through "Apply" have no model-written text, to keep model spend bounded.
-- **The guard is keyword-based.** It catches the known failure modes but is not exhaustive; provenance labels remain the main safeguard.
+- **The guard is keyword-based.** On a held-out set of 25 overclaims it had not seen, it withheld 14 ([docs/EVALUATION.md](docs/EVALUATION.md)); provenance labels remain the main safeguard.
 - **Map tiles come from OpenFreeMap's public instance** (free, no key, public use allowed); a heavy production load would self-host the same tiles.
 - **Single instance.** Limits, caches and the scout's state are in-memory per server process; plans persist under `DATA_DIR`.
 

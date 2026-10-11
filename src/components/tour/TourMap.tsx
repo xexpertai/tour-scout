@@ -280,7 +280,8 @@ export default function TourMap({ cities, stops, cells = [], ghosts = [], propos
     // Frame the country's hotspots before they bloom, and the candidates when they arrive.
     if (phase === "hotspots" || (phase === "scoring" && !cells.length)) {
       const b = boundsOf([...cells, ...cities]);
-      if (b) map.fitBounds(b, { padding: 50, maxZoom: 5.2, duration: reducedMotion() ? 0 : 900 });
+      // The top keeps the "Scoring N cities" caption clear of the northernmost city label.
+      if (b) map.fitBounds(b, { padding: { top: 76, bottom: 50, left: 50, right: 50 }, maxZoom: 5.2, duration: reducedMotion() ? 0 : 900 });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the cell set
   }, [cellKey, ready, phase]);
@@ -376,7 +377,8 @@ export default function TourMap({ cities, stops, cells = [], ghosts = [], propos
     // Room for the city names around the pins; scaled down when the pane is short (the compact mobile map).
     const paddingFor = () => {
       const h = map.getContainer().clientHeight, k = Math.min(1, h / 400);
-      return isNarrow() ? { top: 44 * k + 8, bottom: 40 * k + 8, left: 92, right: 112 } : { top: 80, bottom: 70, left: 130, right: 150 };
+      // The top keeps the map caption ("Your 5-stop run", up to ~52 px tall) clear of the northernmost pin.
+      return isNarrow() ? { top: Math.max(64, 44 * k + 8), bottom: Math.max(52, 40 * k + 8), left: 92, right: 112 } : { top: 100, bottom: 70, left: 130, right: 150 };
     };
     const padding = paddingFor();
     const reduce = reducedMotion();

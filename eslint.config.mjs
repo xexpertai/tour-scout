@@ -16,6 +16,8 @@ const eslintConfig = defineConfig([
     "scripts/video/layout-qa.js",
     // The Remotion video project has its own package and tsconfig (and generated data).
     "video/remotion/**",
+    // Local agent scratch (gitignored).
+    ".scratch/**",
   ]),
 ]);
 

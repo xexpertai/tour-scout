@@ -21,7 +21,9 @@ def stop_check(page):
 
 
 with sync_playwright() as p:
-    b = p.chromium.launch()
+    # Headless Linux Chromium hints glyph advances to whole pixels, which spreads small Barlow text
+    # unevenly ("comparis on"); real phones and desktops don't. Turn hinting off for true spacing.
+    b = p.chromium.launch(args=["--font-render-hinting=none"])
     d = b.new_page(viewport={"width": 1440, "height": 900}, color_scheme="dark")
     d.goto(f"{BASE}/", wait_until="networkidle"); d.wait_for_timeout(8000)
     d.screenshot(path=str(OUT / "landing.png"))

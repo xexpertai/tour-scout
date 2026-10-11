@@ -15,7 +15,8 @@
     "docs:excerpt": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/docs-excerpt.mts",
     "typecheck": "next typegen && tsc --noEmit",
     "pretest": "next typegen > /dev/null",
-    "presets:recheck": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/presets-recheck.mts"
+    "presets:recheck": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/presets-recheck.mts",
+    "eval": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/evaluate.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",

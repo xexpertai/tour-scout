@@ -55,6 +55,10 @@ test("room sizes must be the user's own: invented or altered ranges are withheld
   assert.equal(inventedCapacity("We're looking at rooms of 300–900 (our own target).", [300, 900]), undefined);
   assert.equal(inventedCapacity("Ages 25–34 over-index; stops 2–5 are in New England.", undefined), undefined);
   assert.equal(inventedCapacity("Comedy rooms with room affinity 84–92 across four cities.", undefined), undefined);
+  // A single size is a room size too, unless it is one end of the user's own range.
+  assert.ok(inventedCapacity("Fuze Box is a good fit for a 150-person show.", [100, 300]));
+  assert.ok(inventedCapacity("An intimate 200-seat room.", undefined));
+  assert.equal(inventedCapacity("Rooms of up to 300-person capacity, your own target.", [100, 300]), undefined);
 });
 
 test("stop text that names a city off the route is withheld", async () => {

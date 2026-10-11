@@ -15,11 +15,11 @@ export type Withheld = { field: string; reason: string };
  */
 const UNSUPPORTED_CLAIMS: { pattern: RegExp; reason: string }[] = [
   {
-    pattern: /\b(income|incomes|affluen\w*|wealth\w*|well[- ]off|disposable|salar(?:y|ies|ied)|high[- ]earn\w*|earners?|net worth|spending power|purchasing power|socio-?economic|middle[- ]class|upper[- ]class|working[- ]class|posh|elite|luxury[- ]seeking)\b/i,
+    pattern: /\b(income|incomes|affluen\w*|wealth\w*|well[- ]off|well[- ]paid|money to spend|disposable|salar(?:y|ies|ied)|high[- ]earn\w*|earners?|net worth|spending power|purchasing power|socio-?economic|middle[- ]class|upper[- ]class|working[- ]class|posh|elite|luxury[- ]seeking)\b/i,
     reason: "mentioned income or financial status, which Qloo taste data does not measure",
   },
   {
-    pattern: /\b(caste|religio\w*|ethnic\w*|racial|politic\w*|health condition|disabilit\w*|sexual orientation|immigra\w*)\b/i,
+    pattern: /\b(caste|religio\w*|ethnic\w*|racial|politic\w*|health condition|disabilit\w*|sexual orientation|immigra\w*|jewish|christians?|muslims?|hindus?|sikhs?|catholics?|evangelicals?|queer|gay|lesbians?|lgbt\w*|transgender)\b/i,
     reason: "mentioned a sensitive trait, which must not be inferred from taste data",
   },
   {
@@ -27,23 +27,23 @@ const UNSUPPORTED_CLAIMS: { pattern: RegExp; reason: string }[] = [
     reason: "stated an affinity as a certainty or cause, which aggregate taste data cannot establish",
   },
   {
-    pattern: /\b(sell(?:s|ing)? out|sold[- ]out|will (?:attend|show up|turn up|buy tickets)|expected (?:attendance|turnout|crowd)|(?:\d[\d,]*\+?|hundreds|thousands) (?:of )?(?:people|fans|attendees|tickets) will|ticket sales of|forecast(?:ed)? (?:attendance|turnout|sales))\b/i,
+    pattern: /\b(sell(?:s|ing)? out|sold[- ]out|will (?:attend|show up|turn up|buy tickets)|expected (?:attendance|turnout|crowd)|(?:\d[\d,]*\+?|hundreds|thousands) (?:of )?(?:people|fans|attendees|tickets) will|ticket sales of|forecast(?:ed)? (?:attendance|turnout|sales)|(?:ticket|audience|fan) demand|(?:packed|full|sold-out) (?:house|room|venue)|expect(?:ed|ing)?\b[^.\n]{0,20}\b\d[\d,]*\+?\s+(?:people|fans|attendees|tickets|heads))\b/i,
     reason: "forecast attendance or ticket sales, which taste affinity cannot predict",
   },
   {
     // Qloo has no venue capacity; the user's target may be quoted, never matched to a room.
-    pattern: /\b(match(?:es|ing)?|suits?|suited|supports?|fits?|accommodat\w*|scaled to|sized for|calibrated)\b[^.\n]{0,60}\bcapacity\b|\bcapacity\b[^.\n]{0,40}\b(match(?:es)?|suits?|suited|fits?|aligns?)\b|\bhigh[- ]capacity\b|\b(match(?:es|ing)?|suits?|supports?|fits?)\b[^.\n]{0,40}\b\d{2,5}\s*[–-]\s*\d{2,5}\b/i,
+    pattern: /\b(match(?:es|ing)?|suits?|suited|supports?|fits?|accommodat\w*|scaled to|sized for|calibrated)\b[^.\n]{0,60}\bcapacity\b|\bcapacity\b[^.\n]{0,40}\b(match(?:es)?|suits?|suited|fits?|aligns?)\b|\bhigh[- ]capacity\b|\b(match(?:es|ing)?|suits?|supports?|fits?)\b[^.\n]{0,40}\b\d{2,5}\s*[–-]\s*\d{2,5}\b|\b(?:right|ideal|perfect|good|great) size for\b/i,
     reason: "claimed a room fits the capacity, but Qloo has no venue capacity data",
   },
   {
     // Demographics are aggregate context for the whole audience, not a targeting tool or a city fact.
-    pattern: /\b(target(?:s|ing)?|market(?:ing)? to|aim(?:ed|ing)? at|appeal(?:s|ing)? to|cater(?:s|ing)? to|resonates? with|connects? with|frame[sd]?\b[^.\n]{0,25}\bfor)\b[^.\n]{0,30}\b(older|younger|male|female|men|women|boys|girls|gen ?z|millennials?|boomers?|seniors?|over[- ]?\d{2}s?|under[- ]?\d{2}s?|\d{2}\+)\b|\b(ages?|aged)\s+\d{2}\s*[–-]\s*\d{2}\s+(dominate|make up|are most)/i,
+    pattern: /\b(target(?:s|ing)?|market(?:ing)? to|aim(?:ed|ing)? at|appeal(?:s|ing)? to|cater(?:s|ing)? to|resonates? with|connects? with|frame[sd]?\b[^.\n]{0,25}\bfor)\b[^.\n]{0,30}\b(older|younger|male|female|men|women|boys|girls|gen ?z|millennials?|boomers?|seniors?|over[- ]?\d{2}s?|under[- ]?\d{2}s?|\d{2}\+)\b|\b(ages?|aged)\s+\d{2}\s*[–-]\s*\d{2}\s+(dominate|make up|are most)|\b(?:market|pitch|promot|advertis|tailor|aim|target|design)\w*\b[^.\n]{0,40}\b(?:to|at|for|toward)\b[^.\n]{0,15}\b(?:older|younger|men|women|male|female|girls|boys|teens?|gen ?z|millennials?|boomers?|seniors?)\b/i,
     reason: "targeted or sized an age or gender group, but demographics are aggregate context only",
   },
   {
     // Demographics may only be quoted as Qloo's aggregate index with the exact bucket and value
     // ("ages 45–54 over-index, +0.53"); characterising the audience ("skews male") is not supported.
-    pattern: /\b(skew(?:s|ing|ed)?|lean(?:s|ing)?|tilt(?:s|ing)?|predominantly|mostly|largely|majority(?: of)?|dominated by)\b[^.\n]{0,25}\b(male|female|men|women|guys|girls|older|younger|gen ?z|millennials?|boomers?)\b|\b(male|female|older|younger)[- ](leaning|skewing|skewed|dominated|heavy)\b/i,
+    pattern: /\b(skew(?:s|ing|ed)?|lean(?:s|ing)?|tilt(?:s|ing)?|predominantly|mostly|largely|mainly|primarily|most of (?:these|the|this)|majority(?: of)?|dominated by)\b[^.\n]{0,25}\b(male|female|men|women|guys|girls|older|younger|gen ?z|millennials?|boomers?)\b|\b(male|female|older|younger)[- ](leaning|skewing|skewed|dominated|heavy)\b/i,
     reason: "characterised the audience by gender or age instead of quoting Qloo's aggregate index",
   },
   {
@@ -51,7 +51,7 @@ const UNSUPPORTED_CLAIMS: { pattern: RegExp; reason: string }[] = [
     reason: "presented taste affinity as confirmed demand",
   },
   {
-    pattern: /\b(this fan|that fan|a fan named|individual fans?|specific fans?|fans?'s? (?:home|address|email|phone)|their (?:home address|email|phone))\b/i,
+    pattern: /\b(this fan|that fan|one fan|a single fan|a fan named|individual fans?|specific fans?|superfans?|fans?'s? (?:home|address|email|phone)|their (?:home address|email|phone))\b/i,
     reason: "referred to individual fans, but Qloo data describes audiences only in aggregate",
   },
 ];
@@ -75,6 +75,12 @@ export function inventedCapacity(text: string, capacity?: [number, number]): str
     const [a, b] = [Number(m[1].replace(/,/g, "")), Number(m[2].replace(/,/g, ""))];
     if (!capacity) return "gave a room size the user did not provide";
     if (a !== capacity[0] || b !== capacity[1]) return "gave a room size that differs from the user's own target";
+  }
+  // A single size: "a 150-person show", "an intimate 200-seat room".
+  for (const m of text.matchAll(/\b(\d[\d,]{1,5})[- ](?:person|people|seat|seater|cap|capacity)\b/gi)) {
+    const n = Number(m[1].replace(/,/g, ""));
+    if (!capacity) return "gave a room size the user did not provide";
+    if (n !== capacity[0] && n !== capacity[1]) return "gave a room size that differs from the user's own target";
   }
   return undefined;
 }
@@ -151,7 +157,9 @@ export function roomPartnership(text: string, venues: string[] = []): boolean {
 
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 /** Claims the data cannot back for this plan: pronouns for the act, a new act's own music, hotspots that are not there. */
-export function planClaims(field: string, text: string, o: GuardOpts): string | undefined {
+export function planClaims(field: string, raw: string, o: GuardOpts): string | undefined {
+  // Initials ("S.G. Goodman", "D.C.") would end a sentence for the [^.] spans below.
+  const text = raw.replace(/\b(?:[A-Z]\.){2,}/g, (m) => m.replace(/\./g, ""));
   if (/\b(he|she|him|her|hers|his)\b/i.test(text)) return "used he/she (the act's gender is not in the data)";
   if (/\b(already booked|is booked|are booked|booked (for|at|in))\b/i.test(text)) return "presented a suggestion as a booking";
   if (/\b(already|currently|now) (touring|on tour|playing|performing|routing)\b|\bon tour (with|in|through)\b/i.test(text)) return "claimed an act's touring activity, which Qloo data does not show";
@@ -200,7 +208,7 @@ export function planClaims(field: string, text: string, o: GuardOpts): string | 
   }
   // "Each city hosts fans…" when only some stops are near a fan hotspot.
   if (o.hotspotCities && o.stopNames && o.hotspotCities.length < o.stopNames.length && /^summary/.test(field)
-    && (/\b(?:each|every|all(?: (?:five|four|three|six|\d))?)\b(?: (?:city|cities|stop|stops|market|markets))?[^.]{0,40}\b(?:hosting|hosts?|home to|with|has|have)\b[^.]{0,25}\bfans\b/i.test(text)
+    && (/\b(?:each|every|all(?: (?:five|four|three|six|\d))?)\b(?: (?:city|cities|stop|stops|market|markets))?[^.]{0,40}\b(?:hosting|hosts?|home to|with|has|have)\b[^.]{0,40}\bfans\b/i.test(text)
       || /\b(?:all|each|every)\b[^.]{0,40}\bnear\b[^.]{0,20}\bhotspots?\b/i.test(text)
       || /\b(?:cities|stops|markets)\b where (?:fans|the audience|this audience)\b[^.]{0,50}\b(?:concentrate|cluster|gather|live)\b/i.test(text))) {
     return `claimed fans in every stop, but only ${o.hotspotCities.length} of ${o.stopNames.length} stops are near a Qloo fan hotspot`;

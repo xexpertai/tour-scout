@@ -55,3 +55,6 @@ __pycache__/
 
 # local-only review notes (never tracked)
 docs/DESIGN_REVIEW.md
+
+# local scratch (agents)
+/.scratch/

@@ -84,22 +84,24 @@ function RoutePreview({ onOpen }: { onOpen: () => void }) {
   const [reduce] = useState(() => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
   useEffect(() => {
     if (!plan || reduce) return;
-    // 0 heat → 1 cities scored → 2 stops → 3 route, hold, repeat.
-    const steps = [1600, 1400, 1200, 6000];
-    const t = setTimeout(() => setPhase((p) => (p + 1) % 4), steps[phase]);
+    // 0 heat → 1 cities scored → 2 route, hold, repeat. The map holds each phase for a minimum time
+    // itself (TourMap HOLD), so each step here is a little longer than that hold and the cities stay
+    // in until the route is drawn; otherwise the scoring step is skipped and the route shows briefly.
+    const steps = [1800, 2000, 6500];
+    const t = setTimeout(() => setPhase((p) => (p + 1) % 3), steps[phase]);
     return () => clearTimeout(t);
   }, [plan, phase, reduce]);
-  if (reduce && phase !== 3) setPhase(3);
+  if (reduce && phase !== 2) setPhase(2);
   const stops = plan ? [...plan.stops].sort((a, b) => a.order - b.order) : [];
-  const cities: MapCity[] = phase === 1 && plan ? (plan.candidates ?? plan.stops.map((x) => x.city)).filter((c) => c.lat !== undefined && c.lng !== undefined)
+  const cities: MapCity[] = phase >= 1 && plan ? (plan.candidates ?? plan.stops.map((x) => x.city)).filter((c) => c.lat !== undefined && c.lng !== undefined)
     .map((c) => ({ id: c.entityId, name: c.name, lat: c.lat!, lng: c.lng!, affinity: c.affinity })) : [];
-  const mapStops: MapStop[] = phase >= 2 ? stops.filter((x) => x.city.lat !== undefined).map((x) => ({ id: x.stopId, order: x.order, name: x.city.name, lat: x.city.lat!, lng: x.city.lng! })) : [];
+  const mapStops: MapStop[] = phase === 2 ? stops.filter((x) => x.city.lat !== undefined).map((x) => ({ id: x.stopId, order: x.order, name: x.city.name, lat: x.city.lat!, lng: x.city.lng! })) : [];
   return (
     <figure className="relative">
       <button type="button" onClick={onOpen} aria-label={plan ? `Open the ${plan.artist.name} demo: ${stops.map((x) => x.city.name).join(", ")}` : "Open the lead demo"}
         className="map-box relative block h-[300px] w-full overflow-hidden rounded-2xl border border-line text-left sm:h-[380px]">
         {/* The preview is a picture inside one button: inert, so its pins are neither focusable nor read out as controls. */}
-        {plan && <div inert className="pointer-events-none absolute inset-0"><TourMap cities={cities} stops={mapStops} cells={plan.coverage?.cells} routeFinal={phase === 3} /></div>}
+        {plan && <div inert className="pointer-events-none absolute inset-0"><TourMap cities={cities} stops={mapStops} cells={plan.coverage?.cells} routeFinal={phase === 2} /></div>}
         <span className="absolute bottom-3 left-3 rounded-full bg-bg/85 px-3 py-1.5 text-xs font-semibold text-ink">▶ Open this demo</span>
       </button>
       <figcaption className="mt-2 text-sm text-muted">{plan ? `${possessive(plan.artist.name)} demo (a fictional act, fans of ${plan.artist.proxyOf?.join(", ") ?? plan.artist.name}), from live Qloo data: fan hotspots, then the ${stops.length}-stop route.` : "Loading the demo…"}</figcaption>

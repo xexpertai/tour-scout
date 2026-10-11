@@ -138,6 +138,7 @@ Q29  compare_audiences GET /v2/analysis/compare  a=<Joanna Sternberg>, b=<Squirr
 
 - Routes you can actually drive, in rooms that fit a small act: Maya's Boston → Burlington → Albany → New York → Philadelphia run through O'Briens Pub, Monkey House, Fuze Box, The Broadway and Ortlieb's, where the agent route check proposes Providence over Albany (stronger, still drivable, less driving); Joe List's Washington DC → Boston club run through DC Comedy Loft, Helium, EastVille Comedy Club, Comedy Connection and Laugh Boston. All from Qloo data, with every claim linked to its request.
 - An agent that proposes, not just chats, and a server that refuses any proposal the agent didn't earn from its own tool results.
+- Claims you can re-check offline: `npm run eval` re-checks the three demo plans with no API calls. 177 of 177 Qloo values cite a real request, 48 of 48 AI sentences cite real requests, 12 of 12 legs are within a day's drive, 15 of 15 openers fit the size rule or carry the flag, and the 3 recorded route checks pass 14 of 14 independent re-checks (`docs/EVALUATION.md`).
 - Honesty built into the product:
   - affinity is never presented as ticket demand;
   - room sizes are only ever the user's own;
@@ -155,6 +156,7 @@ Q29  compare_audiences GET /v2/analysis/compare  a=<Joanna Sternberg>, b=<Squirr
 - Dates and routing costs: combine affinity with drive times and a calendar.
 - Support-slot discovery for emerging acts: which touring acts with overlapping fans pass through your city.
 - More countries' touring-city lists, and a booker-facing share view.
+- The reverse view for rooms: which touring acts fit a venue's audience.
 - Pilots with a few independent acts and comedy managers. It has not been tested with real acts yet; feedback goes to the repo's issues.
 
 ### What it doesn't do (limitations)
@@ -166,6 +168,7 @@ Q29  compare_audiences GET /v2/analysis/compare  a=<Joanna Sternberg>, b=<Squirr
 - **Broad venue tag.** It includes some galleries and bars. Every room is a suggestion to check.
 - **Taste tags vary by act.** Some acts get few tags, and the plan says "Limited data".
 - **Aggregate only.** No personal data is sent to Qloo, and nothing is said about any individual fan.
+- **The guard is keyword-based.** On a held-out set of 25 overclaims it had not seen, it withheld 14 (`docs/EVALUATION.md`). Provenance labels stay the main safeguard.
 - **No outcome evidence yet.** A small check against two acts' archived show lists (10 and 16 shows) was inconclusive: each demo route included 1 of its 5 stops where the act played, which is also the most any route built from the plan's scored candidates could have matched, and random picks do about as well (`docs/BACKTEST.md`).
 
 ## Built with
@@ -198,7 +201,7 @@ Q29  compare_audiences GET /v2/analysis/compare  a=<Joanna Sternberg>, b=<Squirr
 | --- | --- |
 | Technological implementation | Official Qloo harness workflows; two-phase agent with streaming; tool-using scout with server-validated proposals; deterministic guard; an automated test suite (`npm test`), including adapter tests against recorded live responses |
 | Design | The fan map lighting up, then the route drawing itself; gig-poster UI; compact stop tickets; mobile-first layout with a scout bottom sheet; provenance as quiet dots with a "Show receipts" switch; instant demo flyers |
-| Potential impact | A real, underserved user (indie acts and comedians without data teams); useful from the first tap; extends to promoters and bookers |
+| Potential impact | A real, underserved user (indie acts and comedians without data teams); one run hands them 5 drivable stops, 17–20 named rooms, an opener or support-slot idea per stop, 5 booker pitches and sponsor leads, each cited; its own claims re-checked offline (`docs/EVALUATION.md`); extends to managers and bookers |
 | Quality of the idea | A taste question ("where are the people who like this act?") that only Qloo's cross-domain graph answers, turned into an action (a route, rooms, openers and a pitch) |
 
 ## Notes for whoever submits
