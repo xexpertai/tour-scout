@@ -9,7 +9,7 @@ Draft for qloo.devpost.com (deadline 30 Oct 2026, 11:45 pm EDT; target submit 29
 - [ ] Public repo with source and instructions: https://github.com/xexpertai/tour-scout
 - [ ] Open-source license shown in the repo's About section: MIT
 - [ ] Text description of features and the Qloo integration (below)
-- [ ] Optional video (not required): `<VIDEO_URL>`; built by `scripts/video/make-story.sh`
+- [ ] Optional video (not required): https://youtu.be/82Q6wTS93Xs; built by `scripts/video/make-story.sh`
 
 **Kit `SUBMISSION.md` items:**
 
@@ -178,7 +178,7 @@ Q29  compare_audiences GET /v2/analysis/compare  a=<Joanna Sternberg>, b=<Squirr
 
 - Demo: https://tour-scout-196979752200.us-central1.run.app. Tap a demo poster for an instant captured run (its scout suggestion marked "instant" also replays at no cost), or type any artist or comedian for a live run (rate-limited).
 - Code: https://github.com/xexpertai/tour-scout (MIT)
-- Video (optional): `<VIDEO_URL>`
+- Video (optional): https://youtu.be/82Q6wTS93Xs
 
 ## Gallery (from `docs/screenshots/`, live data, no credentials or personal data)
 

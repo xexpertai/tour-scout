@@ -2,7 +2,7 @@
 
 **Plan a tour before you have listeners there.** Find your fans before you book the room: Tour Scout plans a small tour for an indie musician or comedian from where their audience's taste actually is, using [Qloo](https://www.qloo.com)'s taste graph (a new act can plan from the artists it sounds like), then the route-check agent tests the plan with Qloo tools and proposes at most one change.
 
-**Try it:** [tour-scout-196979752200.us-central1.run.app](https://tour-scout-196979752200.us-central1.run.app) · **Video (1:27):** _link pending_ · **Code:** this repo (MIT)
+**Try it:** [tour-scout-196979752200.us-central1.run.app](https://tour-scout-196979752200.us-central1.run.app) · **Video (1:27):** [YouTube](https://youtu.be/82Q6wTS93Xs) · **Code:** this repo (MIT)
 
 ![The fan map lights up: Qloo's hotspots for fans of Joanna Sternberg, then the drivable route Boston → Burlington → Albany → New York → Philadelphia for Maya, a fictional demo act. The route-check agent proposes swapping Albany (88.7) for Providence (91.3); after Apply the route redraws as Burlington → Boston → Providence → New York → Philadelphia (Replay of a run captured from live Qloo data)](docs/screenshots/hero.gif)
 
